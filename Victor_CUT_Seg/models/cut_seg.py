@@ -281,8 +281,9 @@ class CUT_SEG_model(nn.Module):
                 save_path = os.path.join(self.save_dir, save_filename)
                 net = getattr(self, 'net' + name)
 
-                if torch.cuda.is_available():
+                if len(self.gpu_ids) > 0 and torch.cuda.is_available():
                     torch.save(net.module.cpu().state_dict(), save_path)
+                    net.cuda(self.gpu_ids[0])
                 else:
                     torch.save(net.cpu().state_dict(), save_path)
     
@@ -362,6 +363,12 @@ class CUT_SEG_model(nn.Module):
 
         lr = self.optimizers[0].param_groups[0]['lr']
         print('learning rate = %.7f' % lr)
+    
+    def parallelize(self):
+        for name in self.model_names:
+            if isinstance(name, str):
+                net = getattr(self, 'net' + name)
+                setattr(self, 'net' + name, torch.nn.DataParallel(net, self.opt.gpu_ids))
         
     # For TESTING
     def eval(self):
