@@ -8,7 +8,6 @@ import numpy as np
 import os
 import torch
 import torch.nn as nn
-from torchsummary import summary
 from collections import OrderedDict
 
 import utils.util as util
@@ -22,7 +21,6 @@ class CUT_SEG_model(nn.Module):
         self.optimizers = []
         # specify the training losses you want to print out.
         self.loss_names = ['G_GAN', 'D_real', 'D_fake', 'G', 'NCE', 'SEG']
-        self.visual_names = ['real_A', 'fake_B', 'real_B', 'fake_A_mask', 'fake_B_mask']
         self.nce_layers = [int(i) for i in self.opt.nce_layers.split(',')]
         
         if torch.cuda.is_available():
@@ -30,6 +28,8 @@ class CUT_SEG_model(nn.Module):
         elif torch.backends.mps.is_available():
             self.device = torch.device('mps')
         else: self.device = torch.device('cpu')
+
+        print(f'using device: {self.device}')
         
         if self.opt.isTrain:
             self.model_names = ['G', 'F', 'D', 'S']
@@ -37,14 +37,14 @@ class CUT_SEG_model(nn.Module):
             self.model_names = ['G', 'S']
             
         # define the generator, G
-        print(opt.input_nc, opt.output_nc, opt.ngf, opt.netG)
+        # print(opt.input_nc, opt.output_nc, opt.ngf, opt.netG)
         self.netG = define_G(opt.input_nc, opt.output_nc, opt.ngf, opt.netG, opt.normG, not opt.no_dropout, opt.init_type, opt.init_gain, opt.no_antialias, opt.no_antialias_up, opt)
         # define the sampler, F
-        print(opt.input_nc, opt.output_nc, opt.ngf, opt.netF)
+        # print(opt.input_nc, opt.output_nc, opt.ngf, opt.netF)
         self.netF = define_F(opt.input_nc, opt.netF, opt.normG, not opt.no_dropout, opt.init_type, opt.init_gain, opt.no_antialias, opt)
         # define the segmentor, S
-        print(opt.input_nc, opt.output_nc, opt.ngf, opt.netF)
-        self.netS = define_S(opt.input_nc, opt.output_nc, opt.ngf, opt.netG, opt.normG, not opt.no_dropout, opt.init_type, opt.init_gain, opt.no_antialias, opt.no_antialias_up, opt)
+        # print(opt.input_nc, opt.output_nc, opt.ngf, opt.netS)
+        self.netS = define_S(opt.input_nc, opt.num_class, opt.ngf, opt.netS, opt.normS, not opt.no_dropout, opt.init_type, opt.init_gain, opt.no_antialias, opt.no_antialias_up, opt)
         
         if self.opt.isTrain:
             print(opt.output_nc, opt.ndf, opt.netD)
@@ -56,7 +56,8 @@ class CUT_SEG_model(nn.Module):
             self.criterionSEG = SEGLoss(seg_lambda=opt.netS_lambda).to(self.device)
             
             for _ in self.nce_layers:
-                self.criterionNCE.append(PatchNCELoss(opt).to(self.device))
+                nceLoss = PatchNCELoss(opt).to(self.device)
+                self.criterionNCE.append(nceLoss)
                 
             self.criterionIdt = torch.nn.L1Loss().to(self.device)
             # define the optimizers
@@ -78,7 +79,7 @@ class CUT_SEG_model(nn.Module):
         Please also see PatchSampleF.create_mlp(), which is called at the first forward() call.
         """
         self.set_input(data)
-
+        print(f'real A has shape: {self.real_A.shape}')
         self.forward() # compute segmentation and fake image
         if self.opt.isTrain:
             self.compute_S_loss().backward() # calculate gradients for S
@@ -125,9 +126,13 @@ class CUT_SEG_model(nn.Module):
         """
         # A is the source and B is the target
         A, B = input
-        self.mask_A, self.real_A = A.to(self.device)
-        self.mask_B, self.real_B = B.to(self.device)
-        # mask out the area
+        self.mask_A, self.real_A = A
+        self.mask_B, self.real_B = B
+        """attach to the device"""
+        self.mask_A = self.mask_A.to(self.device)
+        self.real_A = self.real_A.to(self.device)
+        self.mask_B = self.mask_B.to(self.device)
+        self.real_B = self.real_B.to(self.device)
         
     def forward(self):
         """Run forward pass; called by both functions <optimize_parameters> and <test>."""
@@ -233,15 +238,7 @@ class CUT_SEG_model(nn.Module):
             if net is not None:
                 for param in net.parameters():
                     param.requires_grad = requires_grad
-    
-    def print_networks(self):
-        """Print out the network summary
-        """
-        summaries = [summary(self.netS, input_data=tuple(self.real.shape)), summary(self.netG, input_data=tuple(self.real.shape)),\
-            summary(self.netD, input_data=tuple(self.fake_B.shape))]
-        
-        return summaries
-    
+
     def save_networks(self, epoch):
         """Save all the networks to the disk.
 
@@ -313,9 +310,9 @@ class CUT_SEG_model(nn.Module):
         Parameters:
             opt (Option class) -- stores all the experiment flags; needs to be a subclass of BaseOptions
         """
-        if self.isTrain:
+        if self.opt.isTrain:
             self.schedulers = [get_scheduler(optimizer, opt) for optimizer in self.optimizers]
-        if not self.isTrain or opt.continue_train:
+        if not self.opt.isTrain or opt.continue_train:
             load_suffix = opt.epoch
             self.load_networks(load_suffix)
 

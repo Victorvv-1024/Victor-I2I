@@ -67,12 +67,14 @@ class GANLoss(nn.Module):
     
 class SEGLoss(nn.Module):
     def __init__(self, seg_lambda):
+        super(SEGLoss, self).__init__()
         # Potential: only supports for batch_size=1 now.
         self.seg_lambda = seg_lambda
         self.loss = nn.CrossEntropyLoss(reduction='none')
 
     def __call__(self, prediction, real_mask):
         # measure the loss between the generated mask and the ground truth mask, scales by lambda
+        real_mask = real_mask.to(torch.float32)
         loss = self.loss(prediction, real_mask) / self.seg_lambda
 
         return loss
@@ -95,19 +97,7 @@ class PatchNCELoss(nn.Module):
         l_pos = l_pos.view(num_patches, 1)
 
         # neg logit
-
-        # Should the negatives from the other samples of a minibatch be utilized?
-        # In CUT and FastCUT, we found that it's best to only include negatives
-        # from the same image. Therefore, we set
-        # --nce_includes_all_negatives_from_minibatch as False
-        # However, for single-image translation, the minibatch consists of
-        # crops from the "same" high-resolution image.
-        # Therefore, we will include the negatives from the entire minibatch.
-        if self.opt.nce_includes_all_negatives_from_minibatch:
-            # reshape features as if they are all negatives of minibatch of size 1.
-            batch_dim_for_bmm = 1
-        else:
-            batch_dim_for_bmm = self.opt.batch_size
+        batch_dim_for_bmm = 1
 
         # reshape features to batch size
         feat_q = feat_q.view(batch_dim_for_bmm, -1, dim)

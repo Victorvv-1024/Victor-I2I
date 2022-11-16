@@ -97,9 +97,11 @@ if __name__ == '__main__':
             data = (src_img, tar_img)
             
             if epoch == opt.epoch_count and idx == 0:
+                print(f'Initialization starts here at epoch and idx: {epoch, idx}, pretrain the netF')
                 model.data_dependent_initialize(data)
                 model.setup(opt)               # regular setup: load and print networks; create schedulers
-            
+
+            print(f'training')
             model.set_input(data)  # unpack data from dataset and apply preprocessing
             model.optimize_parameters()   # calculate loss functions, get gradients, update network weights
         

@@ -67,7 +67,7 @@ class EczemaDataset(data.Dataset):
         input_img, real_img = src_img[:,:w,:], src_img[:,w:,:]
         
         if self.isTrain: # if train, mask out the real img
-            input_img, real_img = self.mask_real_img(src_img)
+            input_img, real_img = self.mask_real_img(input_img, real_img)
         
         input_img = Variable(torch.from_numpy(input_img.astype(np.float32)))
         real_img = Variable(torch.from_numpy(real_img.astype(np.float32)))

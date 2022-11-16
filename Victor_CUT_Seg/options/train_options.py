@@ -49,6 +49,8 @@ def ArgParse():
     parser.add_argument('--netF_nc', type=int, default=256)
     parser.add_argument('--nce_T', type=float, default=0.07, help='temperature for NCE loss')
     parser.add_argument('--netS', type=str, default='resnet', choices=['resnet', 'unet'], help='how to segment the input image')
+    parser.add_argument('--normS', type=str, default='instance', choices=['instance', 'batch', 'none'], help='instance normalization or batch normalization for S')
+    parser.add_argument('--num_class', type=int, default=2, help='# of output image channels for segmented mask')
     parser.add_argument('--netS_lambda', type=int, default=10, help='lambda for SEG loss')
     parser.add_argument('--num_patches', type=int, default=256, help='number of patches per layer')
     parser.add_argument('--flip_equivariance',

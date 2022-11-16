@@ -206,29 +206,30 @@ class ResnetGenerator(nn.Module):
         self.model = nn.Sequential(*model)
 
     def forward(self, input, layers=[], encode_only=False):
-        if -1 in layers:
-            layers.append(len(self.model))
-        if len(layers) > 0:
-            feat = input
-            feats = []
-            for layer_id, layer in enumerate(self.model):
-                print(layer_id, layer)
-                feat = layer(feat)
-                if layer_id in layers:
-                    print("%d: adding the output of %s %d" % (layer_id, layer.__class__.__name__, feat.size(1)))
-                    feats.append(feat)
-                else:
-                    print("%d: skipping %s %d" % (layer_id, layer.__class__.__name__, feat.size(1)))
-                    pass
-                if layer_id == layers[-1] and encode_only:
-                    print('encoder only return features')
-                    return feats  # return intermediate features alone; stop in the last layers
+        # if -1 in layers:
+        #     layers.append(len(self.model))
+        # if len(layers) > 0:
+        #     feat = input
+        #     feats = []
+        #     for layer_id, layer in enumerate(self.model):
+        #         print(layer_id, layer)
+        #         feat = layer(feat)
+        #         if layer_id in layers:
+        #             print("%d: adding the output of %s %d" % (layer_id, layer.__class__.__name__, feat.size(1)))
+        #             feats.append(feat)
+        #         else:
+        #             print("%d: skipping %s %d" % (layer_id, layer.__class__.__name__, feat.size(1)))
+        #             pass
+        #         if layer_id == layers[-1] and encode_only:
+        #             print('encoder only return features')
+        #             return feats  # return intermediate features alone; stop in the last layers
 
-            return feat, feats  # return both output and intermediate features
-        else:
-            """Standard forward"""
-            fake = self.model(input)
-            return fake
+        #     return feat, feats  # return both output and intermediate features
+        # else:
+
+        """Standard forward"""
+        fake = self.model(input)
+        return fake
 
 class Discriminator(nn.Module):
     """Defines a PatchGAN discriminator"""
@@ -341,7 +342,7 @@ class ResnetEncoder(nn.Module):
 class ResNetSegmentor(nn.Module):
     """Resnet-based segmentor that consists of a few downsampling + several Resnet blocks
     """
-    def __init__(self, input_nc, output_nc=7, ngf=64, norm_layer=nn.BatchNorm2d, use_dropout=False, n_blocks=6, padding_type='reflect', no_antialias=False, no_antialias_up=False):
+    def __init__(self, input_nc, output_nc=2, ngf=64, norm_layer=nn.BatchNorm2d, use_dropout=False, n_blocks=6, padding_type='reflect', no_antialias=False, no_antialias_up=False):
         assert(n_blocks >= 0)
         super(ResNetSegmentor, self).__init__()
         if type(norm_layer) == functools.partial:
@@ -394,7 +395,6 @@ class ResNetSegmentor(nn.Module):
         
         model += [nn.ReflectionPad2d(3)]
         model += [nn.Conv2d(ngf, output_nc, kernel_size=7, padding=0)]
-        model += [nn.Linear(output_nc, output_nc)]
         
         self.model = nn.Sequential(*model)
         
@@ -425,8 +425,11 @@ class PatchSampleF(nn.Module):
 
     def create_mlp(self, feats):
         for mlp_id, feat in enumerate(feats):
+            feat = feat.unsqueeze(0)
             input_nc = feat.shape[1]
             mlp = nn.Sequential(*[nn.Linear(input_nc, self.nc), nn.ReLU(), nn.Linear(self.nc, self.nc)])
+            if torch.cuda.is_available():
+                mlp.cuda()
             setattr(self, 'mlp_%d' % mlp_id, mlp)
         init_net(self, self.init_type, self.init_gain)
         self.mlp_init = True
@@ -437,6 +440,7 @@ class PatchSampleF(nn.Module):
         if self.use_mlp and not self.mlp_init:
             self.create_mlp(feats)
         for feat_id, feat in enumerate(feats):
+            feat = feat.unsqueeze(0)
             B, H, W = feat.shape[0], feat.shape[2], feat.shape[3]
             feat_reshape = feat.permute(0, 2, 3, 1).flatten(1, 2)
             if num_patches > 0:
@@ -450,6 +454,7 @@ class PatchSampleF(nn.Module):
             else:
                 x_sample = feat_reshape
                 patch_id = []
+   
             if self.use_mlp:
                 mlp = getattr(self, 'mlp_%d' % feat_id)
                 x_sample = mlp(x_sample)
