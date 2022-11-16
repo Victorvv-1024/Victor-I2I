@@ -79,10 +79,10 @@ class CUT_SEG_model(nn.Module):
         Please also see PatchSampleF.create_mlp(), which is called at the first forward() call.
         """
         self.set_input(data)
-        print(f'real A has shape: {self.real_A.shape}')
         self.forward() # compute segmentation and fake image
         if self.opt.isTrain:
-            self.compute_S_loss().backward() # calculate gradients for S
+            # self.compute_S_loss().backward()
+            self.compute_S_loss().backward(retain_graph=True) # calculate gradients for S
             self.compute_D_loss().backward() # calculate gradients for D
             self.compute_G_loss().backward() # calculate graidents for G
             if self.opt.lambda_NCE > 0.0:
@@ -97,7 +97,7 @@ class CUT_SEG_model(nn.Module):
         self.set_requires_grad(self.netS, True)
         self.optimizer_S.zero_grad()
         self.loss_S = self.compute_S_loss()
-        self.loss_S.backward()
+        self.loss_S.backward(retain_graph=True)
         self.optimizer_S.step()
 
         # update D
@@ -133,22 +133,41 @@ class CUT_SEG_model(nn.Module):
         self.real_A = self.real_A.to(self.device)
         self.mask_B = self.mask_B.to(self.device)
         self.real_B = self.real_B.to(self.device)
+
+    def mask_realImage(self):
+        """mask out real image using the ground truth mask
+        """
+        mask_A_img = util.tensor2img(self.mask_A, isMask=True)
+        real_A_img = util.tensor2img(self.real_A)
+        mask_B_img = util.tensor2img(self.mask_B, isMask=True)
+        real_B_img = util.tensor2img(self.real_B)
+        masked_real_A_img = util.mask_image(mask_A_img, real_A_img)
+        masked_real_B_img = util.mask_image(mask_B_img, real_B_img)
+        self.masked_real_A = util.img2tensor(masked_real_A_img).to(self.device)
+        self.masked_real_B = util.img2tensor(masked_real_B_img).to(self.device)
+        self.masked_real = torch.cat((self.masked_real_A, self.masked_real_B), dim=0) if self.opt.nce_idt and self.opt.isTrain else self.masked_real_A
         
     def forward(self):
         """Run forward pass; called by both functions <optimize_parameters> and <test>."""
         self.real = torch.cat((self.real_A, self.real_B), dim=0) if self.opt.nce_idt and self.opt.isTrain else self.real_A
         self.mask = torch.cat((self.mask_A, self.mask_B), dim=0)
+        print(f'real images have shape: {self.real.shape}')
+        print(f'real mask has shape: {self.mask.shape}')
         if self.opt.flip_equivariance:
             self.flipped_for_equivariance = self.opt.isTrain and (np.random.random() < 0.5)
             if self.flipped_for_equivariance:
                 self.real = torch.flip(self.real, [3])
 
-        # segment first
+        # segment first, self.real is not masked out
         self.fake_mask = self.netS(self.real)
         self.fake_mask_B = self.fake_mask[:self.real_A.size(0)]
 
-        # generate fake image
-        self.fake = self.netG(self.real)
+        # mask out the input image using the ground truth mask and generate fake image use the masked real image only if it is training
+        if self.opt.isTrain:
+            self.mask_realImage()
+            self.fake = self.netG(self.masked_real)
+        else: self.fake = self.netG(self.real)
+
         self.fake_B = self.fake[:self.real_A.size(0)] # G_enc(X) -> Y
         if self.opt.nce_idt:
             self.idt_B = self.fake[self.real_A.size(0):] # G_enc(Y)
@@ -200,6 +219,9 @@ class CUT_SEG_model(nn.Module):
             loss_NCE_both = self.loss_NCE
         
         if self.opt.netS_lambda > 0:
+            # fake_mask_B = self.fake_mask_B.detach()
+            # mask_B = self.mask_B.detach()
+            # loss_fake_SEG = self.criterionSEG(fake_mask_B, mask_B).mean()
             loss_fake_SEG = self.criterionSEG(self.fake_mask_B, self.mask_B).mean()
         else: loss_fake_SEG = 0.0
 
@@ -286,11 +308,8 @@ class CUT_SEG_model(nn.Module):
                 #    self.__patch_instance_norm_state_dict(state_dict, net, key.split('.'))
                 net.load_state_dict(state_dict)
                 
-    def print_networks(self, verbose):
+    def print_networks(self):
         """Print the total number of parameters in the network and (if verbose) network architecture
-
-        Parameters:
-            verbose (bool) -- if verbose: print the network architecture
         """
         print('---------- Networks initialized -------------')
         for name in self.model_names:
@@ -299,8 +318,7 @@ class CUT_SEG_model(nn.Module):
                 num_params = 0
                 for param in net.parameters():
                     num_params += param.numel()
-                if verbose:
-                    print(net)
+                print(net)
                 print('[Network %s] Total number of parameters : %.3f M' % (name, num_params / 1e6))
         print('-----------------------------------------------')
     
@@ -316,7 +334,7 @@ class CUT_SEG_model(nn.Module):
             load_suffix = opt.epoch
             self.load_networks(load_suffix)
 
-        self.print_networks(opt.verbose)
+        # self.print_networks()
         
     def get_current_losses(self):
         """Return traning losses / errors. train.py will print out these errors on console, and save them to a file"""

@@ -12,6 +12,7 @@ from PIL import Image
 import torch
 import torchvision.transforms as T
 import torch.nn.functional as F
+from utils.util import img2tensor
 
 
 
@@ -29,14 +30,17 @@ class EczemaDataset(data.Dataset):
     def __len__(self):
         return len(self.src_img_path)
     
-    def mask_real_img(self, input_img, real_img):
-        mask = input_img[:,:,0] # grayscale
+    """mask out should be done at model-level
+    Because the segmentor is expected to receive the whole image for segment!
+    """
+    # def mask_real_img(self, input_img, real_img):
+    #     mask = input_img[:,:,0] # grayscale
         
-        mask_3d = np.stack((mask,mask,mask), axis=-1)
-        masked_real_img = real_img * mask_3d
-        masked_real_img = np.where(mask_3d == 1, real_img, mask_3d)
+    #     mask_3d = np.stack((mask,mask,mask), axis=-1)
+    #     masked_real_img = real_img * mask_3d
+    #     masked_real_img = np.where(mask_3d == 1, real_img, mask_3d)
         
-        return input_img, masked_real_img
+    #     return input_img, masked_real_img
     
     def transform(self):
         transforms = T.Compose(
@@ -66,14 +70,16 @@ class EczemaDataset(data.Dataset):
         w = src_img.shape[1] // 2
         input_img, real_img = src_img[:,:w,:], src_img[:,w:,:]
         
-        if self.isTrain: # if train, mask out the real img
-            input_img, real_img = self.mask_real_img(input_img, real_img)
+        # if self.isTrain: # if train, mask out the real img
+        #     input_img, real_img = self.mask_real_img(input_img, real_img)
         
-        input_img = Variable(torch.from_numpy(input_img.astype(np.float32)))
-        real_img = Variable(torch.from_numpy(real_img.astype(np.float32)))
-        # cast them into tensor of form (batch x channel x height x width)
-        input_img, real_img = input_img.unsqueeze(0), real_img.unsqueeze(0)
-        input_img, real_img = input_img.permute(0, 3, 1, 2), real_img.permute(0, 3, 1, 2)
+        # input_img = Variable(torch.from_numpy(input_img.astype(np.float32)))
+        # real_img = Variable(torch.from_numpy(real_img.astype(np.float32)))
+        # # cast them into tensor of form (batch x channel x height x width)
+        # input_img, real_img = input_img.unsqueeze(0), real_img.unsqueeze(0)
+        # input_img, real_img = input_img.permute(0, 3, 1, 2), real_img.permute(0, 3, 1, 2)
+        
+        input_img, real_img = img2tensor(input_img), img2tensor(real_img)
         # transform the imgs
         transform = self.transform()
         t_input_img, t_real_img = transform(input_img), transform(real_img)
