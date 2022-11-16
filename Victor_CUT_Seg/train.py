@@ -9,6 +9,7 @@ import random
 import numpy as np
 from torch.nn import Softmax
 from torch.autograd import Variable
+from utils import util
 
 
 def on_epoch_end(generator, segmenter, source_dataset, target_dataset, save_dir, epoch, num_img=1):
@@ -29,23 +30,28 @@ def on_epoch_end(generator, segmenter, source_dataset, target_dataset, save_dir,
         # generate the predicted mask for the src img
         pr_src_mask = segmenter(src_real)
         pr_src_mask = Softmax(pr_src_mask)
-        pr_src_mask = pr_src_mask.squeeze(0).permute(1,2,0).cpu().detach().numpy() # as numpy array, shape (H x W x C)
+        # pr_src_mask = pr_src_mask.squeeze(0).permute(1,2,0).cpu().detach().numpy() # as numpy array, shape (H x W x C)
+        pr_src_mask = util.tensor2img(pr_src_mask)
         pr_src_mask = np.argmax(pr_src_mask,axis=-1)
         
         # use the predicted mask to mask out the src img
-        mask_3d = np.stack((pr_src_mask,pr_src_mask,pr_src_mask), axis=-1)
-        real_img = src_real.squeeze(0).permute(1,2,0).cpu().detach().numpy()
-        masked_real_img = real_img * mask_3d
-        masked_real_img = np.where(mask_3d == 1, real_img, mask_3d)
+        # mask_3d = np.stack((pr_src_mask,pr_src_mask,pr_src_mask), axis=-1)
+        # real_img = src_real.squeeze(0).permute(1,2,0).cpu().detach().numpy()
+        real_img = util.tensor2img(src_real)
+        # masked_real_img = real_img * mask_3d
+        # masked_real_img = np.where(mask_3d == 1, real_img, mask_3d)
+        masked_real_img = util.mask_image(pr_src_mask, real_img)
         
         # cast the masked real img into tensor
-        masked_src_real = Variable(torch.from_numpy(masked_real_img.astype(np.float32)))
-        masked_src_real = masked_src_real.unsqueeze(0)
-        masked_src_real = masked_src_real.permute(0, 3, 1, 2)
+        # masked_src_real = Variable(torch.from_numpy(masked_real_img.astype(np.float32)))
+        # masked_src_real = masked_src_real.unsqueeze(0)
+        # masked_src_real = masked_src_real.permute(0, 3, 1, 2)
+        masked_real_img = util.img2tensor(masked_real_img)
         
         # generate the translated img
         translated = generator(src_real)
-        translated = translated.squeeze(0).permute(1,2,0).cpu().detach().numpy()
+        # translated = translated.squeeze(0).permute(1,2,0).cpu().detach().numpy()
+        translated = util.tensor2img(translated)
         translated = (translated * 127.5 + 127.5).astype(np.uint8)
         
         # source img
@@ -53,12 +59,14 @@ def on_epoch_end(generator, segmenter, source_dataset, target_dataset, save_dir,
         
         # generate identity image
         idt = generator(tar_real)
-        idt = idt.squeeze(0).permute(1,2,0).cpu().detach().numpy()
+        # idt = idt.squeeze(0).permute(1,2,0).cpu().detach().numpy()
+        idt = util.tensor2img(idt)
         idt = (idt * 127.5 + 127.5).astype(np.uint8)
         
         # original mask
-        ori_mask = src_input.squeeze(0).permute(1,2,0)
-        ori_mask = ori_mask[:,:,1]
+        # ori_mask = src_input.squeeze(0).permute(1,2,0)
+        # ori_mask = ori_mask[:,:,1]
+        ori_mask = util.tensor2img(src_input, isMask=True)
         
         [ax[i, j].imshow(img) for j, img in enumerate([source_img, translated, tar_input, idt, ori_mask, pr_src_mask])]
         [ax[i, j].axis("off") for j in range(6)]
@@ -92,7 +100,7 @@ if __name__ == '__main__':
     for epoch in range(opt.epoch_count, opt.n_epochs + opt.n_epochs_decay + 1): # outer loop for different epochs; we save the model by <epoch_count>
         epoch_iter = 0                  # the number of training iterations in current epoch, reset to 0 every epoch
         epoch_start_time = time.time()  # timer for entire epoch
-        
+        print(f'training at epoch: {epoch}')
         for idx, (src_img, tar_img) in enumerate(zip(src_dataloader, tar_dataloader)):  # inner loop within one epoch
             data = (src_img, tar_img)
             
@@ -101,7 +109,7 @@ if __name__ == '__main__':
                 model.data_dependent_initialize(data)
                 model.setup(opt)               # regular setup: load and print networks; create schedulers
 
-            print(f'training')
+            
             model.set_input(data)  # unpack data from dataset and apply preprocessing
             model.optimize_parameters()   # calculate loss functions, get gradients, update network weights
         
@@ -109,8 +117,10 @@ if __name__ == '__main__':
         if epoch % opt.save_epoch_freq == 0: # cache our model every <save_epoch_freq> epochs
             print('saving the model at the end of epoch %d' % (epoch))
             model.save_networks(epoch)
+            print(f'model saved successfully')
             # generate and save images after each epoch end
             on_epoch_end(model.netG, model.netS, test_src, test_tar, opt.out_dir, epoch, num_img=1)
+            print(f'images are generated successfully')
         
         print('End of epoch %d / %d \t Time Taken: %d sec' % (epoch, opt.n_epochs + opt.n_epochs_decay, time.time() - epoch_start_time))
         model.update_learning_rate()                     # update learning rates at the end of every epoch.

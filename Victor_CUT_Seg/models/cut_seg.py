@@ -47,7 +47,7 @@ class CUT_SEG_model(nn.Module):
         self.netS = define_S(opt.input_nc, opt.num_class, opt.ngf, opt.netS, opt.normS, not opt.no_dropout, opt.init_type, opt.init_gain, opt.no_antialias, opt.no_antialias_up, opt)
         
         if self.opt.isTrain:
-            print(opt.output_nc, opt.ndf, opt.netD)
+            # print(opt.output_nc, opt.ndf, opt.netD)
             self.netD = define_D(opt.output_nc, opt.ndf, opt.netD, opt.n_layers_D, opt.normD, opt.init_type, opt.init_gain, opt.no_antialias, opt)
             
             # define loss functions
@@ -82,9 +82,10 @@ class CUT_SEG_model(nn.Module):
         self.forward() # compute segmentation and fake image
         if self.opt.isTrain:
             # self.compute_S_loss().backward()
-            self.compute_S_loss().backward(retain_graph=True) # calculate gradients for S
+            # self.compute_S_loss().backward(retain_graph=True) # calculate gradients for S
             self.compute_D_loss().backward() # calculate gradients for D
             self.compute_G_loss().backward() # calculate graidents for G
+            self.compute_S_loss().backward()
             if self.opt.lambda_NCE > 0.0:
                 self.optimizer_F = torch.optim.Adam(self.netF.parameters(), lr=self.opt.lr, betas=(self.opt.beta1, self.opt.beta2))
                 self.optimizers.append(self.optimizer_F)
@@ -94,11 +95,11 @@ class CUT_SEG_model(nn.Module):
         self.forward()
         
         # update S
-        self.set_requires_grad(self.netS, True)
-        self.optimizer_S.zero_grad()
-        self.loss_S = self.compute_S_loss()
-        self.loss_S.backward(retain_graph=True)
-        self.optimizer_S.step()
+        # self.set_requires_grad(self.netS, True)
+        # self.optimizer_S.zero_grad()
+        # self.loss_S = self.compute_S_loss()
+        # self.loss_S.backward()
+        # self.optimizer_S.step()
 
         # update D
         self.set_requires_grad(self.netD, True)
@@ -107,17 +108,25 @@ class CUT_SEG_model(nn.Module):
         self.loss_D.backward()
         self.optimizer_D.step()
 
+        # with torch.autograd.detect_anomaly():
         # update G
         self.set_requires_grad(self.netD, False)
         self.set_requires_grad(self.netS, False)
         self.optimizer_G.zero_grad()
         if self.opt.netF == 'mlp_sample':
             self.optimizer_F.zero_grad()
+        
         self.loss_G = self.compute_G_loss()
         self.loss_G.backward()
         self.optimizer_G.step()
         if self.opt.netF == 'mlp_sample':
             self.optimizer_F.step()
+
+        self.set_requires_grad(self.netS, True)
+        self.optimizer_S.zero_grad()
+        self.loss_S = self.compute_S_loss()
+        self.loss_S.backward()
+        self.optimizer_S.step()
             
     def set_input(self, input):
         """Unpack input data from the dataloader and perform necessary pre-processing steps.
@@ -151,8 +160,6 @@ class CUT_SEG_model(nn.Module):
         """Run forward pass; called by both functions <optimize_parameters> and <test>."""
         self.real = torch.cat((self.real_A, self.real_B), dim=0) if self.opt.nce_idt and self.opt.isTrain else self.real_A
         self.mask = torch.cat((self.mask_A, self.mask_B), dim=0)
-        print(f'real images have shape: {self.real.shape}')
-        print(f'real mask has shape: {self.mask.shape}')
         if self.opt.flip_equivariance:
             self.flipped_for_equivariance = self.opt.isTrain and (np.random.random() < 0.5)
             if self.flipped_for_equivariance:
@@ -218,14 +225,15 @@ class CUT_SEG_model(nn.Module):
         else:
             loss_NCE_both = self.loss_NCE
         
-        if self.opt.netS_lambda > 0:
-            # fake_mask_B = self.fake_mask_B.detach()
-            # mask_B = self.mask_B.detach()
-            # loss_fake_SEG = self.criterionSEG(fake_mask_B, mask_B).mean()
-            loss_fake_SEG = self.criterionSEG(self.fake_mask_B, self.mask_B).mean()
-        else: loss_fake_SEG = 0.0
+        # if self.opt.netS_lambda > 0:
+        #     # fake_mask_B = self.fake_mask_B.detach()
+        #     # mask_B = self.mask_B.detach()
+        #     # loss_fake_SEG = self.criterionSEG(fake_mask_B, mask_B).mean()
+        #     loss_fake_SEG = self.criterionSEG(self.fake_mask_B, self.mask_B).mean()
+        # else: loss_fake_SEG = 0.0
 
-        self.loss_G = self.loss_G_GAN + loss_NCE_both + loss_fake_SEG
+        # self.loss_G = self.loss_G_GAN + loss_NCE_both + loss_fake_SEG
+        self.loss_G = self.loss_G_GAN + loss_NCE_both
         return self.loss_G
     
     def calculate_NCE_loss(self, src, tgt):
