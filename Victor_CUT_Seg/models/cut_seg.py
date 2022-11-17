@@ -38,17 +38,17 @@ class CUT_SEG_model(nn.Module):
             
         # define the generator, G
         # print(opt.input_nc, opt.output_nc, opt.ngf, opt.netG)
-        self.netG = define_G(opt.input_nc, opt.output_nc, opt.ngf, opt.netG, opt.normG, not opt.no_dropout, opt.init_type, opt.init_gain, opt.no_antialias, opt.no_antialias_up, opt)
+        self.netG = define_G(opt.input_nc, opt.output_nc, opt.ngf, opt.netG, opt.normG, not opt.no_dropout, opt.init_type, opt.init_gain, opt.antialias, opt.antialias_up, opt)
         # define the sampler, F
         # print(opt.input_nc, opt.output_nc, opt.ngf, opt.netF)
-        self.netF = define_F(opt.input_nc, opt.netF, opt.normG, not opt.no_dropout, opt.init_type, opt.init_gain, opt.no_antialias, opt)
+        self.netF = define_F(opt.input_nc, opt.netF, opt.normG, not opt.no_dropout, opt.init_type, opt.init_gain, opt.antialias, opt)
         # define the segmentor, S
         # print(opt.input_nc, opt.output_nc, opt.ngf, opt.netS)
-        self.netS = define_S(opt.input_nc, opt.num_class, opt.ngf, opt.netS, opt.normS, not opt.no_dropout, opt.init_type, opt.init_gain, opt.no_antialias, opt.no_antialias_up, opt)
+        self.netS = define_S(opt.input_nc, opt.num_class, opt.ngf, opt.netS, opt.normS, not opt.no_dropout, opt.init_type, opt.init_gain, opt.antialias, opt.antialias_up, opt)
         
         if self.opt.isTrain:
             # print(opt.output_nc, opt.ndf, opt.netD)
-            self.netD = define_D(opt.output_nc, opt.ndf, opt.netD, opt.n_layers_D, opt.normD, opt.init_type, opt.init_gain, opt.no_antialias, opt)
+            self.netD = define_D(opt.output_nc, opt.ndf, opt.netD, opt.n_layers_D, opt.normD, opt.init_type, opt.init_gain, opt.antialias, opt)
             
             # define loss functions
             self.criterionGAN = GANLoss().to(self.device)

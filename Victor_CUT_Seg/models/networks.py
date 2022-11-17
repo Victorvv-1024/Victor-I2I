@@ -131,7 +131,7 @@ class ResnetGenerator(nn.Module):
     We adapt Torch code and idea from Justin Johnson's neural style transfer project(https://github.com/jcjohnson/fast-neural-style)
     """
 
-    def __init__(self, input_nc, output_nc, ngf=64, norm_layer=nn.BatchNorm2d, use_dropout=False, n_blocks=6, padding_type='reflect', no_antialias=False, no_antialias_up=False, opt=None):
+    def __init__(self, input_nc, output_nc, ngf=64, norm_layer=nn.BatchNorm2d, use_dropout=False, n_blocks=6, padding_type='reflect', antialias=False, antialias_up=False, opt=None):
         """Construct a Resnet-based generator
 
         Parameters:
@@ -160,18 +160,19 @@ class ResnetGenerator(nn.Module):
         n_downsampling = 2
         for i in range(n_downsampling):  # add downsampling layers
             mult = 2 ** i
-            if(no_antialias):
-                # 1st downsampling: input channel 64, output 128, use stride convolution for downsampling
-                # 2nd downsampling: input channel 128, output 256
-                model += [nn.Conv2d(ngf * mult, ngf * mult * 2, kernel_size=3, stride=2, padding=1, bias=use_bias), 
-                          norm_layer(ngf * mult * 2),
-                          nn.ReLU(True)]
-            else:
+
+            if antialias:
                 # use blur kernel to downsample
                 model += [nn.Conv2d(ngf * mult, ngf * mult * 2, kernel_size=3, stride=1, padding=1, bias=use_bias),
                           norm_layer(ngf * mult * 2),
                           nn.ReLU(True),
                           Downsample(ngf * mult * 2)]
+            else:
+                # 1st downsampling: input channel 64, output 128, use stride convolution for downsampling
+                # 2nd downsampling: input channel 128, output 256
+                model += [nn.Conv2d(ngf * mult, ngf * mult * 2, kernel_size=3, stride=2, padding=1, bias=use_bias), 
+                          norm_layer(ngf * mult * 2),
+                          nn.ReLU(True)]
 
         mult = 2 ** n_downsampling
         
@@ -183,19 +184,20 @@ class ResnetGenerator(nn.Module):
         # UPSAMPLING
         for i in range(n_downsampling):  # add upsampling layers
             mult = 2 ** (n_downsampling - i)
-            if no_antialias_up:
-                model += [nn.ConvTranspose2d(ngf * mult, int(ngf * mult / 2),
-                                             kernel_size=3, stride=2,
-                                             padding=1, output_padding=1,
-                                             bias=use_bias),
-                          norm_layer(int(ngf * mult / 2)),
-                          nn.ReLU(True)]
-            else:
+
+            if antialias_up:
                 model += [Upsample(ngf * mult),
                           nn.Conv2d(ngf * mult, int(ngf * mult / 2),
                                     kernel_size=3, stride=1,
                                     padding=1,  # output_padding=1,
                                     bias=use_bias),
+                          norm_layer(int(ngf * mult / 2)),
+                          nn.ReLU(True)]
+            else:
+                model += [nn.ConvTranspose2d(ngf * mult, int(ngf * mult / 2),
+                                             kernel_size=3, stride=2,
+                                             padding=1, output_padding=1,
+                                             bias=use_bias),
                           norm_layer(int(ngf * mult / 2)),
                           nn.ReLU(True)]
         
@@ -234,7 +236,7 @@ class ResnetGenerator(nn.Module):
 class Discriminator(nn.Module):
     """Defines a PatchGAN discriminator"""
 
-    def __init__(self, input_nc, ndf=64, n_layers=3, norm_layer=nn.BatchNorm2d, no_antialias=False):
+    def __init__(self, input_nc, ndf=64, n_layers=3, norm_layer=nn.BatchNorm2d, antialias=False):
         """Construct a PatchGAN discriminator
 
         Parameters:
@@ -251,27 +253,30 @@ class Discriminator(nn.Module):
 
         kw = 4
         padw = 1
-        if(no_antialias):
-            sequence = [nn.Conv2d(input_nc, ndf, kernel_size=kw, stride=2, padding=padw), nn.LeakyReLU(0.2, True)]
-        else:
+
+        if antialias:
             sequence = [nn.Conv2d(input_nc, ndf, kernel_size=kw, stride=1, padding=padw), nn.LeakyReLU(0.2, True), Downsample(ndf)]
+        else:
+            sequence = [nn.Conv2d(input_nc, ndf, kernel_size=kw, stride=2, padding=padw), nn.LeakyReLU(0.2, True)]
+
         nf_mult = 1
         nf_mult_prev = 1
         for n in range(1, n_layers):  # gradually increase the number of filters
             nf_mult_prev = nf_mult
             nf_mult = min(2 ** n, 8)
-            if(no_antialias):
-                sequence += [
-                    nn.Conv2d(ndf * nf_mult_prev, ndf * nf_mult, kernel_size=kw, stride=2, padding=padw, bias=use_bias),
-                    norm_layer(ndf * nf_mult),
-                    nn.LeakyReLU(0.2, True)
-                ]
-            else:
+
+            if antialias:
                 sequence += [
                     nn.Conv2d(ndf * nf_mult_prev, ndf * nf_mult, kernel_size=kw, stride=1, padding=padw, bias=use_bias),
                     norm_layer(ndf * nf_mult),
                     nn.LeakyReLU(0.2, True),
                     Downsample(ndf * nf_mult)]
+            else:
+                sequence += [
+                    nn.Conv2d(ndf * nf_mult_prev, ndf * nf_mult, kernel_size=kw, stride=2, padding=padw, bias=use_bias),
+                    norm_layer(ndf * nf_mult),
+                    nn.LeakyReLU(0.2, True)
+                ]
 
         nf_mult_prev = nf_mult
         nf_mult = min(2 ** n_layers, 8)
@@ -292,7 +297,7 @@ class ResnetEncoder(nn.Module):
     """Resnet-based encoder that consists of a few downsampling + several Resnet blocks
     """
 
-    def __init__(self, input_nc, output_nc, ngf=64, norm_layer=nn.BatchNorm2d, use_dropout=False, n_blocks=6, padding_type='reflect', no_antialias=False):
+    def __init__(self, input_nc, output_nc, ngf=64, norm_layer=nn.BatchNorm2d, use_dropout=False, n_blocks=6, padding_type='reflect', antialias=False):
         """Construct a Resnet-based encoder
 
         Parameters:
@@ -319,15 +324,16 @@ class ResnetEncoder(nn.Module):
         n_downsampling = 2
         for i in range(n_downsampling):  # add downsampling layers
             mult = 2 ** i
-            if(no_antialias):
-                model += [nn.Conv2d(ngf * mult, ngf * mult * 2, kernel_size=3, stride=2, padding=1, bias=use_bias),
-                          norm_layer(ngf * mult * 2),
-                          nn.ReLU(True)]
-            else:
+
+            if antialias:
                 model += [nn.Conv2d(ngf * mult, ngf * mult * 2, kernel_size=3, stride=1, padding=1, bias=use_bias),
                           norm_layer(ngf * mult * 2),
                           nn.ReLU(True),
                           Downsample(ngf * mult * 2)]
+            else:
+                model += [nn.Conv2d(ngf * mult, ngf * mult * 2, kernel_size=3, stride=2, padding=1, bias=use_bias),
+                          norm_layer(ngf * mult * 2),
+                          nn.ReLU(True)]
 
         mult = 2 ** n_downsampling
         for i in range(n_blocks):       # add ResNet blocks
@@ -342,7 +348,7 @@ class ResnetEncoder(nn.Module):
 class ResNetSegmentor(nn.Module):
     """Resnet-based segmentor that consists of a few downsampling + several Resnet blocks
     """
-    def __init__(self, input_nc, output_nc=2, ngf=64, norm_layer=nn.BatchNorm2d, use_dropout=False, n_blocks=6, padding_type='reflect', no_antialias=False, no_antialias_up=False):
+    def __init__(self, input_nc, output_nc=2, ngf=64, norm_layer=nn.BatchNorm2d, use_dropout=False, n_blocks=6, padding_type='reflect', antialias=False, antialias_up=False):
         assert(n_blocks >= 0)
         super(ResNetSegmentor, self).__init__()
         if type(norm_layer) == functools.partial:
@@ -359,15 +365,16 @@ class ResNetSegmentor(nn.Module):
         n_downsampling = 2
         for i in range(n_downsampling):  # add downsampling layers
             mult = 2 ** i
-            if(no_antialias):
-                model += [nn.Conv2d(ngf * mult, ngf * mult * 2, kernel_size=3, stride=2, padding=1, bias=use_bias),
-                          norm_layer(ngf * mult * 2),
-                          nn.ReLU(True)]
-            else:
+
+            if antialias:
                 model += [nn.Conv2d(ngf * mult, ngf * mult * 2, kernel_size=3, stride=1, padding=1, bias=use_bias),
                           norm_layer(ngf * mult * 2),
                           nn.ReLU(True),
                           Downsample(ngf * mult * 2)]
+            else:
+                model += [nn.Conv2d(ngf * mult, ngf * mult * 2, kernel_size=3, stride=2, padding=1, bias=use_bias),
+                          norm_layer(ngf * mult * 2),
+                          nn.ReLU(True)]
         
         # ResNet Blocks
         mult = 2 ** n_downsampling
@@ -377,19 +384,20 @@ class ResNetSegmentor(nn.Module):
         # UPSAMPLING
         for i in range(n_downsampling):  # add upsampling layers
             mult = 2 ** (n_downsampling - i)
-            if no_antialias_up:
-                model += [nn.ConvTranspose2d(ngf * mult, int(ngf * mult / 2),
-                                             kernel_size=3, stride=2,
-                                             padding=1, output_padding=1,
-                                             bias=use_bias),
-                          norm_layer(int(ngf * mult / 2)),
-                          nn.ReLU(True)]
-            else:
+
+            if antialias_up:
                 model += [Upsample(ngf * mult),
                           nn.Conv2d(ngf * mult, int(ngf * mult / 2),
                                     kernel_size=3, stride=1,
                                     padding=1,  # output_padding=1,
                                     bias=use_bias),
+                          norm_layer(int(ngf * mult / 2)),
+                          nn.ReLU(True)]
+            else:
+                model += [nn.ConvTranspose2d(ngf * mult, int(ngf * mult / 2),
+                                             kernel_size=3, stride=2,
+                                             padding=1, output_padding=1,
+                                             bias=use_bias),
                           norm_layer(int(ngf * mult / 2)),
                           nn.ReLU(True)]
         
@@ -469,7 +477,7 @@ class PatchSampleF(nn.Module):
 
 # Define networks
 def define_G(input_nc, output_nc, ngf, netG, norm='batch', use_dropout=False, init_type='normal',
-             init_gain=0.02, no_antialias=False, no_antialias_up=False, opt=None):
+             init_gain=0.02, antialias=False, antialias_up=False, opt=None):
     """Create a generator
 
     Parameters:
@@ -490,14 +498,14 @@ def define_G(input_nc, output_nc, ngf, netG, norm='batch', use_dropout=False, in
     norm_layer = get_norm_layer(norm_type=norm)
 
     if netG == 'resnet_9blocks':
-        net = ResnetGenerator(input_nc, output_nc, ngf, norm_layer=norm_layer, use_dropout=use_dropout, no_antialias=no_antialias, no_antialias_up=no_antialias_up, n_blocks=9, opt=opt)
+        net = ResnetGenerator(input_nc, output_nc, ngf, norm_layer=norm_layer, use_dropout=use_dropout, antialias=antialias, antialias_up=antialias_up, n_blocks=9, opt=opt)
     elif netG == 'resnet_6blocks':
-        net = ResnetGenerator(input_nc, output_nc, ngf, norm_layer=norm_layer, use_dropout=use_dropout, no_antialias=no_antialias, no_antialias_up=no_antialias_up, n_blocks=6, opt=opt)
+        net = ResnetGenerator(input_nc, output_nc, ngf, norm_layer=norm_layer, use_dropout=use_dropout, antialias=antialias, antialias_up=antialias_up, n_blocks=6, opt=opt)
     else:
         raise NotImplementedError('Generator model name [%s] is not recognized' % netG)
     return init_net(net, init_type, init_gain)
 
-def define_F(input_nc, netF, norm='batch', use_dropout=False, init_type='normal', init_gain=0.02, no_antialias=False, opt=None):
+def define_F(input_nc, netF, norm='batch', use_dropout=False, init_type='normal', init_gain=0.02, antialias=False, opt=None):
     if netF == 'sample':
         net = PatchSampleF(use_mlp=False, init_type=init_type, init_gain=init_gain, nc=opt.netF_nc)
     elif netF == 'mlp_sample':
@@ -507,18 +515,18 @@ def define_F(input_nc, netF, norm='batch', use_dropout=False, init_type='normal'
     return init_net(net, init_type, init_gain)
 
 def define_S(input_nc, output_nc, ngf, netS, norm='batch', use_dropout=False, init_type='normal',
-             init_gain=0.02, no_antialias=False, no_antialias_up=False, opt=None):
+             init_gain=0.02, antialias=False, antialias_up=False, opt=None):
     net = None
     norm_layer = get_norm_layer(norm)
     
     if netS == 'resnet':
-        net = ResNetSegmentor(input_nc, output_nc, ngf, norm_layer, use_dropout, no_antialias=no_antialias, no_antialias_up=no_antialias_up)
+        net = ResNetSegmentor(input_nc, output_nc, ngf, norm_layer, use_dropout, antialias=antialias, antialias_up=antialias_up)
     else:
         raise NotImplementedError('Segmentor model name [%s] is not recognized'% netS)
     
     return init_net(net, init_type, init_gain)
 
-def define_D(input_nc, ndf, netD, n_layers_D=3, norm='batch', init_type='normal', init_gain=0.02, no_antialias=False, opt=None):
+def define_D(input_nc, ndf, netD, n_layers_D=3, norm='batch', init_type='normal', init_gain=0.02, antialias=False, opt=None):
     """Create a discriminator
 
     Parameters:
@@ -551,9 +559,9 @@ def define_D(input_nc, ndf, netD, n_layers_D=3, norm='batch', init_type='normal'
     norm_layer = get_norm_layer(norm_type=norm)
 
     if netD == 'basic':  # default PatchGAN classifier
-        net = Discriminator(input_nc, ndf, n_layers=3, norm_layer=norm_layer, no_antialias=no_antialias,)
+        net = Discriminator(input_nc, ndf, n_layers=3, norm_layer=norm_layer, antialias=antialias,)
     elif netD == 'n_layers':  # more options
-        net = Discriminator(input_nc, ndf, n_layers_D, norm_layer=norm_layer, no_antialias=no_antialias,)
+        net = Discriminator(input_nc, ndf, n_layers_D, norm_layer=norm_layer, antialias=antialias,)
     else:
         raise NotImplementedError('Discriminator model name [%s] is not recognized' % netD)
     return init_net(net, init_type, init_gain)

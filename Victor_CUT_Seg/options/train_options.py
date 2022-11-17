@@ -13,9 +13,9 @@ def ArgParse():
     parser.add_argument('--train_tar_dir', help='Train-target dataset folder', type=str, default='datasets/datasets_paired/train/pairedB')
     parser.add_argument('--test_src_dir', help='Test-source dataset folder', type=str, default='datasets/datasets_paired/test/pairedA')
     parser.add_argument('--test_tar_dir', help='Test-target dataset folder', type=str, default='datasets/datasets_paired/test/pairedB')
-    # parser.add_argument('--dataroot', default='placeholder', help='path to images (should have subfolders trainA, trainB, valA, valB, etc)')
+
     parser.add_argument('--name', type=str, default='demo_v0', help='name of the experiment. It decides where to store samples and models')
-    # parser.add_argument('--gpu_ids', type=str, default='0', help='gpu ids: e.g. 0 0,1,2 0,2 use -1 for CPU')
+
     parser.add_argument('--easy_label', type=str, default='demo_v0', help='Interpretable name')
     parser.add_argument('--checkpoints_dir', type=str, default='./checkpoints', help='models are saved here')
     # the output dir is set for demo
@@ -36,8 +36,8 @@ def ArgParse():
     parser.add_argument('--init_gain', type=float, default=0.02, help='scaling factor for normal, xavier and orthogonal.')
     parser.add_argument('--no_dropout', type=util.str2bool, nargs='?', const=True, default=True,
                         help='no dropout for the generator')
-    parser.add_argument('--no_antialias', action='store_true', help='if specified, use stride=2 convs instead of antialiased-downsampling (sad)')
-    parser.add_argument('--no_antialias_up', action='store_true', help='if specified, use [upconv(learned filter)] instead of [upconv(hard-coded [1,3,3,1] filter), conv]')
+    parser.add_argument('--antialias', action='store_true', help='if specified, use antialiased-downsampling')
+    parser.add_argument('--antialias_up', action='store_true', help='if specified, use [upconv(learned filter)]')
 
     parser.add_argument('--lambda_GAN', type=float, default=1.0, help='weight for GAN loss：GAN(G(X))')
     parser.add_argument('--lambda_NCE', type=float, default=1.0, help='weight for NCE loss: NCE(G(X), X)')
