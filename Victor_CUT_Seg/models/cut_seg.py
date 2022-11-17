@@ -196,10 +196,10 @@ class CUT_SEG_model(nn.Module):
     def compute_S_loss(self):
         """Calculate SEG loss for the segmentor"""
         if self.opt.netS_lambda > 0:
-            self.loss_real_SEG = self.criterionSEG(self.fake_mask, self.mask).mean()
-        else: self.loss_real_SEG = 0.0
+            self.loss_SEG = self.criterionSEG(self.fake_mask, self.mask).mean()
+        else: self.loss_SEG = 0.0
         
-        self.loss_S = self.loss_real_SEG
+        self.loss_S = self.loss_SEG
         
         # loss_S is used to optimize SEG 
         return self.loss_S
@@ -281,9 +281,9 @@ class CUT_SEG_model(nn.Module):
                 save_path = os.path.join(self.save_dir, save_filename)
                 net = getattr(self, 'net' + name)
 
-                if len(self.gpu_ids) > 0 and torch.cuda.is_available():
+                if torch.cuda.is_available():
                     torch.save(net.module.cpu().state_dict(), save_path)
-                    net.cuda(self.gpu_ids[0])
+                    net.cuda()
                 else:
                     torch.save(net.cpu().state_dict(), save_path)
     
@@ -368,7 +368,7 @@ class CUT_SEG_model(nn.Module):
         for name in self.model_names:
             if isinstance(name, str):
                 net = getattr(self, 'net' + name)
-                setattr(self, 'net' + name, torch.nn.DataParallel(net, self.opt.gpu_ids))
+                setattr(self, 'net' + name, torch.nn.DataParallel(net, device_ids=[0]))
         
     # For TESTING
     def eval(self):

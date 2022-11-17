@@ -10,6 +10,8 @@ import numpy as np
 from torch.nn import Softmax
 from torch.autograd import Variable
 from utils import util
+import pickle
+import os
 
 
 def on_epoch_end(generator, segmenter, source_dataset, target_dataset, save_dir, epoch, num_img=1):
@@ -95,6 +97,7 @@ if __name__ == '__main__':
     
     # create the model
     model = CUT_SEG_model(opt)
+    loss_hist = []
     
     # start training
     for epoch in range(opt.epoch_count, opt.n_epochs + opt.n_epochs_decay + 1): # outer loop for different epochs; we save the model by <epoch_count>
@@ -118,9 +121,13 @@ if __name__ == '__main__':
             print('saving the model at the end of epoch %d' % (epoch))
             model.save_networks(epoch)
             print(f'model saved successfully')
+
             # generate and save images after each epoch end
             on_epoch_end(model.netG, model.netS, test_src, test_tar, opt.out_dir, epoch, num_img=1)
             print(f'images are generated successfully')
         
+        print('saving the loss at the end of epoch %d' % (epoch))
+        loss_hist.append(model.get_current_losses())
+        pickle.dump(loss_hist, open(os.path.join(opt.out_dir, 'loss', 'loss_'+str(epoch)), 'wb'))
         print('End of epoch %d / %d \t Time Taken: %d sec' % (epoch, opt.n_epochs + opt.n_epochs_decay, time.time() - epoch_start_time))
         model.update_learning_rate()                     # update learning rates at the end of every epoch.
