@@ -23,13 +23,15 @@ def on_epoch_end(generator, segmenter, source_dataset, target_dataset, save_dir,
         [ax[0, i].set_title(title) for i, title in enumerate(titles)]
     
     # randomly pick the tensor from the test dataset
-    random_idx = []
+    source_random_idx = []
+    target_random_idx = []
     for _ in range(num_img):
-        random_idx.append(random.randint(0, min(len(source_dataset), len(target_dataset))-1))
+        source_random_idx.append(random.randint(0, len(source_dataset)-1))
+        target_random_idx.append(random.randint(0, len(target_dataset)-1))
         
     # generate imgs from the random picked dataset
-    for i, idx in enumerate(random_idx):
-        source_tensor, target_tensor = source_dataset[idx], target_dataset[idx]
+    for i, idx in enumerate(zip(source_random_idx,target_random_idx)):
+        source_tensor, target_tensor = source_dataset[idx[0]], target_dataset[idx[1]]
         src_input, src_real = source_tensor
         tar_input, tar_real = target_tensor
         
@@ -80,6 +82,7 @@ def on_epoch_end(generator, segmenter, source_dataset, target_dataset, save_dir,
             [ax[i, j].imshow(img) for j, img in enumerate([source_img, translated, util.tensor2img(tar_real), idt, ori_mask, pr_src_mask])]
             [ax[i, j].axis("off") for j in range(6)]
     
+    save_dir = os.path.join(save_dir, 'img')
     # save the images
     plt.savefig(f'{save_dir}/epoch={epoch + 1}.png')
     plt.close()

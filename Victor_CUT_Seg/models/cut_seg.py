@@ -93,13 +93,6 @@ class CUT_SEG_model(nn.Module):
     def optimize_parameters(self):
         # forward
         self.forward()
-        
-        # update S
-        # self.set_requires_grad(self.netS, True)
-        # self.optimizer_S.zero_grad()
-        # self.loss_S = self.compute_S_loss()
-        # self.loss_S.backward()
-        # self.optimizer_S.step()
 
         # update D
         self.set_requires_grad(self.netD, True)
@@ -122,6 +115,7 @@ class CUT_SEG_model(nn.Module):
         if self.opt.netF == 'mlp_sample':
             self.optimizer_F.step()
 
+        # update S
         self.set_requires_grad(self.netS, True)
         self.optimizer_S.zero_grad()
         self.loss_S = self.compute_S_loss()
@@ -195,7 +189,10 @@ class CUT_SEG_model(nn.Module):
     
     def compute_S_loss(self):
         """Calculate SEG loss for the segmentor"""
+        # fake_mask = self.fake_mask.detach()
+        # stop backprop to the generator
         if self.opt.netS_lambda > 0:
+            # self.loss_SEG = self.criterionSEG(self.fake_mask, self.mask).mean()
             self.loss_SEG = self.criterionSEG(self.fake_mask, self.mask).mean()
         else: self.loss_SEG = 0.0
         
@@ -225,15 +222,15 @@ class CUT_SEG_model(nn.Module):
         else:
             loss_NCE_both = self.loss_NCE
         
-        # if self.opt.netS_lambda > 0:
-        #     # fake_mask_B = self.fake_mask_B.detach()
-        #     # mask_B = self.mask_B.detach()
-        #     # loss_fake_SEG = self.criterionSEG(fake_mask_B, mask_B).mean()
-        #     loss_fake_SEG = self.criterionSEG(self.fake_mask_B, self.mask_B).mean()
-        # else: loss_fake_SEG = 0.0
+        if self.opt.netS_lambda > 0:
+            fake_mask_B = self.fake_mask_B.detach()
+            # mask_B = self.mask_B.detach()
+            loss_fake_SEG = self.criterionSEG(fake_mask_B, self.mask_B).mean()
+            # loss_fake_SEG = self.criterionSEG(self.fake_mask_B, self.mask_B).mean()
+        else: loss_fake_SEG = 0.0
 
-        # self.loss_G = self.loss_G_GAN + loss_NCE_both + loss_fake_SEG
-        self.loss_G = self.loss_G_GAN + loss_NCE_both
+        self.loss_G = self.loss_G_GAN + loss_NCE_both + loss_fake_SEG
+        # self.loss_G = self.loss_G_GAN + loss_NCE_both
         return self.loss_G
     
     def calculate_NCE_loss(self, src, tgt):

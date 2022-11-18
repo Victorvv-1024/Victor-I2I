@@ -14,12 +14,12 @@ def ArgParse():
     parser.add_argument('--test_src_dir', help='Test-source dataset folder', type=str, default='datasets/datasets_paired/test/pairedA')
     parser.add_argument('--test_tar_dir', help='Test-target dataset folder', type=str, default='datasets/datasets_paired/test/pairedB')
 
-    parser.add_argument('--name', type=str, default='demo_v0', help='name of the experiment. It decides where to store samples and models')
+    parser.add_argument('--name', type=str, default='demo_v1', help='name of the experiment. It decides where to store samples and models')
 
-    parser.add_argument('--easy_label', type=str, default='demo_v0', help='Interpretable name')
+    parser.add_argument('--easy_label', type=str, default='demo_v1', help='Interpretable name')
     parser.add_argument('--checkpoints_dir', type=str, default='./checkpoints', help='models are saved here')
     # the output dir is set for demo
-    parser.add_argument('--out_dir', help='Outputs folder', type=str, default='./output/victor_demo')
+    parser.add_argument('--out_dir', help='Outputs folder', type=str, default='./output/victor_demo_v1')
     
     # model parameters
     parser.add_argument('--CUT_mode', type=str, default="CUT", choices=['CUT', 'cut', 'FastCUT', 'fastcut'], help='')
