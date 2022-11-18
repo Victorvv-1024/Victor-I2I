@@ -14,12 +14,12 @@ def ArgParse():
     parser.add_argument('--test_src_dir', help='Test-source dataset folder', type=str, default='datasets/datasets_paired/test/pairedA')
     parser.add_argument('--test_tar_dir', help='Test-target dataset folder', type=str, default='datasets/datasets_paired/test/pairedB')
 
-    parser.add_argument('--name', type=str, default='demo_v1', help='name of the experiment. It decides where to store samples and models')
+    parser.add_argument('--name', type=str, default='demo_v2', help='name of the experiment. It decides where to store samples and models')
 
-    parser.add_argument('--easy_label', type=str, default='demo_v1', help='Interpretable name')
+    parser.add_argument('--easy_label', type=str, default='demo_v2', help='Interpretable name')
     parser.add_argument('--checkpoints_dir', type=str, default='./checkpoints', help='models are saved here')
     # the output dir is set for demo
-    parser.add_argument('--out_dir', help='Outputs folder', type=str, default='./output/victor_demo_v1')
+    parser.add_argument('--out_dir', help='Outputs folder', type=str, default='./output/victor_demo_v2')
     
     # model parameters
     parser.add_argument('--CUT_mode', type=str, default="CUT", choices=['CUT', 'cut', 'FastCUT', 'fastcut'], help='')
@@ -40,19 +40,22 @@ def ArgParse():
     parser.add_argument('--antialias_up', action='store_true', help='if specified, use [upconv(learned filter)]')
 
     parser.add_argument('--lambda_GAN', type=float, default=1.0, help='weight for GAN loss：GAN(G(X))')
+
     parser.add_argument('--lambda_NCE', type=float, default=1.0, help='weight for NCE loss: NCE(G(X), X)')
     parser.add_argument('--nce_idt', type=util.str2bool, nargs='?', const=True, default=False, help='use NCE loss for identity mapping: NCE(G(Y), Y))')
-    parser.add_argument('--nce_layers', type=str, default='0,4,8,12,16', help='compute NCE loss on which layers')
+    parser.add_argument('--nce_layers', type=str, default='0,3,5,7,11', help='compute NCE loss on which layers')
     parser.add_argument('--nce_includes_all_negatives_from_minibatch',
                         type=util.str2bool, nargs='?', const=True, default=False,
                         help='(used for single image translation) If True, include the negatives from the other samples of the minibatch when computing the contrastive loss. Please see models/patchnce.py for more details.')
     parser.add_argument('--netF', type=str, default='mlp_sample', choices=['sample', 'reshape', 'mlp_sample'], help='how to downsample the feature map')
     parser.add_argument('--netF_nc', type=int, default=256)
     parser.add_argument('--nce_T', type=float, default=0.07, help='temperature for NCE loss')
+
     parser.add_argument('--netS', type=str, default='resnet', choices=['resnet', 'unet'], help='how to segment the input image')
     parser.add_argument('--normS', type=str, default='instance', choices=['instance', 'batch', 'none'], help='instance normalization or batch normalization for S')
     parser.add_argument('--num_class', type=int, default=2, help='# of output image channels for segmented mask')
     parser.add_argument('--netS_lambda', type=int, default=10, help='lambda for SEG loss')
+
     parser.add_argument('--num_patches', type=int, default=256, help='number of patches per layer')
     parser.add_argument('--flip_equivariance',
                         type=bool, nargs='?', default=False,

@@ -8,7 +8,7 @@ import numpy as np
 
 
 from .layers import Downsample, Upsample
-from .layers import get_norm_layer
+from .layers import get_norm_layer, get_pad_layer
 
 def init_weights(net, init_type='normal', init_gain=0.02, debug=False):
     """Initialize network weights.
@@ -208,27 +208,6 @@ class ResnetGenerator(nn.Module):
         self.model = nn.Sequential(*model)
 
     def forward(self, input, layers=[], encode_only=False):
-        # if -1 in layers:
-        #     layers.append(len(self.model))
-        # if len(layers) > 0:
-        #     feat = input
-        #     feats = []
-        #     for layer_id, layer in enumerate(self.model):
-        #         print(layer_id, layer)
-        #         feat = layer(feat)
-        #         if layer_id in layers:
-        #             print("%d: adding the output of %s %d" % (layer_id, layer.__class__.__name__, feat.size(1)))
-        #             feats.append(feat)
-        #         else:
-        #             print("%d: skipping %s %d" % (layer_id, layer.__class__.__name__, feat.size(1)))
-        #             pass
-        #         if layer_id == layers[-1] and encode_only:
-        #             print('encoder only return features')
-        #             return feats  # return intermediate features alone; stop in the last layers
-
-        #     return feat, feats  # return both output and intermediate features
-        # else:
-
         """Standard forward"""
         fake = self.model(input)
         return fake
@@ -348,9 +327,10 @@ class ResnetEncoder(nn.Module):
 class ResNetSegmentor(nn.Module):
     """Resnet-based segmentor that consists of a few downsampling + several Resnet blocks
     """
-    def __init__(self, input_nc, output_nc=2, ngf=64, norm_layer=nn.BatchNorm2d, use_dropout=False, n_blocks=6, padding_type='reflect', antialias=False, antialias_up=False):
+    def __init__(self, input_nc, output_nc=2, ngf=64, norm_layer=nn.BatchNorm2d, use_dropout=False, n_blocks=9, padding_type='reflect', antialias=False, antialias_up=False, opt=None):
         assert(n_blocks >= 0)
         super(ResNetSegmentor, self).__init__()
+        self.opt = opt
         if type(norm_layer) == functools.partial:
             use_bias = norm_layer.func == nn.InstanceNorm2d
         else:
@@ -442,7 +422,7 @@ class PatchSampleF(nn.Module):
         init_net(self, self.init_type, self.init_gain)
         self.mlp_init = True
 
-    def forward(self, feats, num_patches=64, patch_ids=None):
+    def forward(self, feats, num_patches=256, patch_ids=None):
         return_ids = []
         return_feats = []
         if self.use_mlp and not self.mlp_init:
@@ -520,7 +500,7 @@ def define_S(input_nc, output_nc, ngf, netS, norm='batch', use_dropout=False, in
     norm_layer = get_norm_layer(norm)
     
     if netS == 'resnet':
-        net = ResNetSegmentor(input_nc, output_nc, ngf, norm_layer, use_dropout, antialias=antialias, antialias_up=antialias_up)
+        net = ResNetSegmentor(input_nc, output_nc, ngf, norm_layer=norm_layer, use_dropout=use_dropout, antialias=antialias, antialias_up=antialias_up, n_blocks=5, opt=opt)
     else:
         raise NotImplementedError('Segmentor model name [%s] is not recognized'% netS)
     
