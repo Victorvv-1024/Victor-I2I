@@ -35,6 +35,9 @@ class CUT_SEG_model(nn.Module):
             self.model_names = ['G', 'F', 'D', 'S']
         else:  # during test time, only load G and S
             self.model_names = ['G', 'S']
+
+        if self.opt.nce_idt and self.opt.isTrain:
+            self.loss_names += ['NCE_Y']
             
         # define the generator, G
         # print(opt.input_nc, opt.output_nc, opt.ngf, opt.netG)
@@ -162,6 +165,8 @@ class CUT_SEG_model(nn.Module):
             self.mask_realImage()
             self.fake = self.netG(self.masked_real)
         else: self.fake = self.netG(self.real)
+
+        # self.fake = self.netG(self.real)
 
         self.fake_B = self.fake[:self.real_A.size(0)] # G_enc(X) -> Y
         if self.opt.nce_idt: self.idt_B = self.fake[self.real_A.size(0):] # G_enc(Y)

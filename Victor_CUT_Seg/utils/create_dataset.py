@@ -11,8 +11,10 @@ from torch.autograd import Variable
 from PIL import Image
 import torch
 import torchvision.transforms as T
+import torchvision.transforms.functional as TF
 import torch.nn.functional as F
 from utils.util import img2tensor
+import random
 
 
 
@@ -30,14 +32,23 @@ class EczemaDataset(data.Dataset):
         return len(self.src_img_path)
     
     
-    def transform(self):
-        transforms = T.Compose(
-            [T.Resize(size=(286,286), interpolation=T.InterpolationMode.NEAREST),
-             T.RandomCrop(size=(256,256)),
-             T.RandomHorizontalFlip(p=0.5)
-             ]
-        )
-        return transforms
+    def transform(self, input_img, real_img):
+        # Resize
+        resize = T.Resize(size=(286,286), interpolation=T.InterpolationMode.NEAREST)
+        input_img, real_img = resize(input_img), resize(real_img)
+
+        # Random crop
+        i, j, h, w = T.RandomCrop.get_params(
+            real_img, output_size=(256, 256))
+        real_img = TF.crop(real_img, i, j, h, w)
+        input_img = TF.crop(input_img, i, j, h, w)
+
+        # Random horizontal flipping
+        if random.random() > 0.5:
+            real_img = TF.hflip(real_img)
+            input_img = TF.hflip(input_img)
+
+        return input_img, real_img
     
     def normalize(self, input_img, real_img):
         normalize_input_img = input_img.squeeze(0)
@@ -60,8 +71,8 @@ class EczemaDataset(data.Dataset):
            
         input_img, real_img = img2tensor(input_img), img2tensor(real_img)
         # transform the imgs
-        transform = self.transform()
-        t_input_img, t_real_img = transform(input_img), transform(real_img)
+        t_input_img, t_real_img = self.transform(input_img, real_img)
+
         # normalize the imgs
         n_input_img, n_real_img = self.normalize(t_input_img, t_real_img)
         
