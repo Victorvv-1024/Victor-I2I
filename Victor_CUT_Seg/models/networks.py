@@ -517,6 +517,10 @@ class UnetSegmentor(nn.Module):
         self.model = UnetSkipConnectionBlock(output_nc, ngf, input_nc=input_nc, submodule=unet_block, outermost=True, norm_layer=norm_layer) # add the outermost layer
 
     
+    def forward(self, input):
+        """Standard forward"""
+        return self.model(input)
+    
 
 # Define networks
 def define_G(input_nc, output_nc, ngf, netG, norm='batch', use_dropout=False, init_type='normal',
