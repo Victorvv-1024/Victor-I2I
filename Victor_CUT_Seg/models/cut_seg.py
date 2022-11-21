@@ -163,6 +163,7 @@ class CUT_SEG_model(nn.Module):
         masked_real_B_img = util.mask_image(mask_B_img, real_B_img)
         self.masked_real_A = util.img2tensor(masked_real_A_img).to(self.device)
         self.masked_real_B = util.img2tensor(masked_real_B_img).to(self.device)
+
         self.masked_real = torch.cat((self.masked_real_A, self.masked_real_B), dim=0) if self.opt.nce_idt and self.opt.isTrain else self.masked_real_A
         
     def forward(self):
@@ -221,12 +222,12 @@ class CUT_SEG_model(nn.Module):
             self.loss_G_GAN = 0.0
 
         if self.opt.lambda_NCE > 0.0:
-            self.loss_NCE = self.calculate_NCE_loss(self.real_A, self.fake_B)
+            self.loss_NCE = self.calculate_NCE_loss(self.masked_real_A, self.fake_B)
         else:
             self.loss_NCE, self.loss_NCE_bd = 0.0, 0.0
 
         if self.opt.nce_idt and self.opt.lambda_NCE > 0.0:
-            self.loss_NCE_Y = self.calculate_NCE_loss(self.real_B, self.idt_B)
+            self.loss_NCE_Y = self.calculate_NCE_loss(self.masked_real_B, self.idt_B)
             loss_NCE_both = (self.loss_NCE + self.loss_NCE_Y) * 0.5
         else:
             loss_NCE_both = self.loss_NCE
