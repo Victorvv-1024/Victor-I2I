@@ -91,6 +91,18 @@ class CUT_SEG_model(nn.Module):
                 self.optimizer_F = torch.optim.Adam(self.netF.parameters(), lr=self.opt.lr, betas=(self.opt.beta1, self.opt.beta2))
                 self.optimizers.append(self.optimizer_F)
     
+    """optimize the segmentor for the first 100 epoch, to generate good masks first"""
+    def optimize_segmentor(self):
+        # forward
+        self.forward()
+
+        # update S
+        self.set_requires_grad(self.netS, True)
+        self.optimizer_S.zero_grad()
+        self.loss_S = self.compute_S_loss()
+        self.loss_S.backward()
+        self.optimizer_S.step()
+    
     def optimize_parameters(self):
         # forward
         self.forward()
@@ -165,8 +177,6 @@ class CUT_SEG_model(nn.Module):
             self.mask_realImage()
             self.fake = self.netG(self.masked_real)
         else: self.fake = self.netG(self.real)
-
-        # self.fake = self.netG(self.real)
 
         self.fake_B = self.fake[:self.real_A.size(0)] # G_enc(X) -> Y
         if self.opt.nce_idt: self.idt_B = self.fake[self.real_A.size(0):] # G_enc(Y)

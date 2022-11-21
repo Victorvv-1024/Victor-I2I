@@ -5,6 +5,7 @@ AntialiasSampling
 ConvBlock
 ConvTransposeBlock
 ResBlock
+Components of UNet segmentor
 """
 
 import torch
@@ -280,4 +281,3 @@ class ConvTransposeBlock(nn.Module):
         if self.activation:
             x = self.activation(x)
         return x
-    
