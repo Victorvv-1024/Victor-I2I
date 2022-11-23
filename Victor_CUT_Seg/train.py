@@ -39,6 +39,11 @@ def on_epoch_end(generator, segmenter, source_dataset, target_dataset, save_dir,
         src_input, src_real = source_tensor
         tar_input, tar_real = target_tensor
         
+        if torch.backends.mps.is_available():
+            src_input = src_input.to(torch.device('mps'))
+            src_real = src_real.to(torch.device('mps'))
+            tar_real = tar_real.to(torch.device('mps'))
+        
         # generate the predicted mask for the src img
         pr_src_mask = segmenter(src_real)
         pr_src_mask = softmax(pr_src_mask, dim=-1)
@@ -52,6 +57,8 @@ def on_epoch_end(generator, segmenter, source_dataset, target_dataset, save_dir,
         
         # cast the masked real img into tensor
         masked_real_img = util.img2tensor(masked_real_img)
+        
+        if torch.backends.mps.is_available(): masked_real_img = masked_real_img.to(torch.device('mps'))
         
         # generate the translated img
         translated = generator(masked_real_img)
@@ -123,7 +130,7 @@ if __name__ == '__main__':
                 model.setup(opt)               # regular setup: load and print networks; create schedulers
                 model.parallelize()
 
-            if epoch <= 100:
+            if epoch <= 50:
                 # print(f'epoch = {epoch}, train segmentor only')
                 model.set_input(data)
                 model.optimize_segmentor() # optimize the segmentor first
