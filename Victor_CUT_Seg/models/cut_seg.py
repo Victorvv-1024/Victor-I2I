@@ -349,7 +349,7 @@ class CUT_SEG_model(nn.Module):
             load_suffix = opt.epoch
             self.load_networks(load_suffix)
 
-        # self.print_networks()
+        self.print_networks()
         
     def get_current_losses(self):
         """Return traning losses / errors. train.py will print out these errors on console, and save them to a file"""

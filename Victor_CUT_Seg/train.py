@@ -1,5 +1,6 @@
-"""v3 has the same network structure and loss fuction as Kexins'
-v4 trains the segmentor first for 100 epochs, then train the whole composite network 
+"""
+v4 trains the resnet segmentor first for 50 epochs, then train the whole composite network
+v5 trains the unet segmentor first, then the whole composite network
 """
 from options.train_options import ArgParse
 from models.cut_seg import CUT_SEG_model
@@ -19,7 +20,7 @@ import os
 
 def on_epoch_end(generator, segmenter, source_dataset, target_dataset, save_dir, epoch, num_img=2):
     
-    titles = ['Source', "Translated", "Target", "Identity", 'MASK','Predicted mask', 'Pr Masked out']
+    titles = ['Source', "Translated on masked", "Translated on unmasked","Target", "Identity", 'MASK','Predicted mask', 'Pr Masked out']
     _, ax = plt.subplots(num_img, len(titles), figsize=(20, 10))
     if ax.ndim == 1:
         [ax[i].set_title(title) for i, title in enumerate(titles)]
@@ -45,9 +46,8 @@ def on_epoch_end(generator, segmenter, source_dataset, target_dataset, save_dir,
             tar_real = tar_real.to(torch.device('mps'))
         
         # generate the predicted mask for the src img
-        pr_src_mask = segmenter(src_real)
+        pr_src_mask = segmenter(src_real.unsqueeze(0))
         pr_src_mask = softmax(pr_src_mask, dim=-1)
-        # pr_src_mask = pr_src_mask.squeeze(0).permute(1,2,0).cpu().detach().numpy() # as numpy array, shape (H x W x C)
         pr_src_mask = util.tensor2img(pr_src_mask)
         pr_src_mask = np.argmax(pr_src_mask,axis=-1)
         
@@ -58,12 +58,15 @@ def on_epoch_end(generator, segmenter, source_dataset, target_dataset, save_dir,
         # cast the masked real img into tensor
         masked_real_img = util.img2tensor(masked_real_img)
         
-        if torch.backends.mps.is_available(): masked_real_img = masked_real_img.to(torch.device('mps'))
-        
-        # generate the translated img
+        # generate the translated img on masked img
         translated = generator(masked_real_img)
         translated = util.tensor2img(translated)
         translated = (translated * 127.5 + 127.5).astype(np.uint8)
+
+        # generate the translated img on unmasked img
+        unmasked_trans = generator(src_real)
+        unmasked_trans = util.tensor2img(unmasked_trans)
+        unmasked_trans = (unmasked_trans * 127.5 + 127.5).astype(np.uint8)
         
         # source img
         source_img = (real_img * 127.5 + 127.5).astype(np.uint8)
@@ -75,13 +78,17 @@ def on_epoch_end(generator, segmenter, source_dataset, target_dataset, save_dir,
         
         # original mask
         ori_mask = util.tensor2img(src_input, isMask=True)
+
+        # target img
+        target = util.tensor2img(tar_real)
+        target = (target * 127.5 + 127.5).astype(np.uint8)
         
         if ax.ndim == 1:
-            [ax[j].imshow(img) for j, img in enumerate([source_img, translated, util.tensor2img(tar_real), idt, ori_mask, pr_src_mask, util.tensor2img(masked_real_img)])]
-            [ax[j].axis("off") for j in range(6)]
+            [ax[j].imshow(img) for j, img in enumerate([source_img, translated, unmasked_trans,target, idt, ori_mask, pr_src_mask, util.tensor2img(masked_real_img)])]
+            [ax[j].axis("off") for j in range(len(titles))]
         elif ax.ndim > 1:
-            [ax[i, j].imshow(img) for j, img in enumerate([source_img, translated, util.tensor2img(tar_real), idt, ori_mask, pr_src_mask, util.tensor2img(masked_real_img)])]
-            [ax[i, j].axis("off") for j in range(6)]
+            [ax[i, j].imshow(img) for j, img in enumerate([source_img, translated, unmasked_trans,target, idt, ori_mask, pr_src_mask, util.tensor2img(masked_real_img)])]
+            [ax[i, j].axis("off") for j in range(len(titles))]
     
     save_dir = os.path.join(save_dir, 'img')
     # save the images

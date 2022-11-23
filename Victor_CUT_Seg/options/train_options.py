@@ -13,13 +13,13 @@ def ArgParse():
     parser.add_argument('--train_tar_dir', help='Train-target dataset folder', type=str, default='datasets/datasets_paired/train/pairedB')
     parser.add_argument('--test_src_dir', help='Test-source dataset folder', type=str, default='datasets/datasets_paired/test/pairedA')
     parser.add_argument('--test_tar_dir', help='Test-target dataset folder', type=str, default='datasets/datasets_paired/test/pairedB')
-    parser.add_argument('--name', type=str, default='demo_v7', help='name of the experiment. It decides where to store samples and models')
-    parser.add_argument('--easy_label', type=str, default='demo_v7', help='Interpretable name')
+    parser.add_argument('--name', type=str, default='demo_v5', help='name of the experiment. It decides where to store samples and models')
+    parser.add_argument('--easy_label', type=str, default='demo_v5', help='Interpretable name')
     parser.add_argument('--checkpoints_dir', type=str, default='./checkpoints', help='models are saved here')
     parser.add_argument('--load', help='if to load the network', action='store_true')
     parser.add_argument('--load_epoch', help='which checkpoint to load', type=int, default=5)
     # the output dir is set for demo
-    parser.add_argument('--out_dir', help='Outputs folder', type=str, default='./output/victor_demo_v7')
+    parser.add_argument('--out_dir', help='Outputs folder', type=str, default='./output/victor_demo_v5')
     
     # model parameters
     """GAN parameters"""
