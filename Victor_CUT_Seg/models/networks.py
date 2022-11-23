@@ -464,7 +464,6 @@ class UnetSkipConnectionBlock(nn.Module):
     def __init__(self, outer_nc, inner_nc, input_nc=None,
                  submodule=None, outermost=False, innermost=False, norm_layer=nn.BatchNorm2d, use_dropout=False):
         """Construct a Unet submodule with skip connections.
-
         Parameters:
             outer_nc (int) -- the number of filters in the outer conv layer
             inner_nc (int) -- the number of filters in the inner conv layer
@@ -525,10 +524,7 @@ class UnetSkipConnectionBlock(nn.Module):
             return torch.cat([x, self.model(x)], 1)
 
 class UnetSegmentor(nn.Module):
-<<<<<<< HEAD
-    def __init__(self, input_nc, output_nc, num_downs, ngf=64, norm_layer=nn.BatchNorm2d, use_dropout=False) -> None:
-=======
-    """Create a Unet-based generator"""
+    """Create a UnetSegmentor"""
 
     def __init__(self, input_nc, output_nc, num_downs, ngf=64, norm_layer=nn.BatchNorm2d, use_dropout=False):
         """Construct a Unet generator
@@ -539,11 +535,9 @@ class UnetSegmentor(nn.Module):
                                 image of size 128x128 will become of size 1x1 # at the bottleneck
             ngf (int)       -- the number of filters in the last conv layer
             norm_layer      -- normalization layer
-
         We construct the U-Net from the innermost layer to the outermost layer.
         It is a recursive process.
         """
->>>>>>> 23c77143faba6bd82881d30a42597ffa9dfc8a9d
         super(UnetSegmentor, self).__init__()
         # construct unet structure
         unet_block = UnetSkipConnectionBlock(ngf * 8, ngf * 8, input_nc=None, submodule=None, norm_layer=norm_layer, innermost=True)  # add the innermost layer
@@ -558,6 +552,7 @@ class UnetSegmentor(nn.Module):
     def forward(self, input):
         """Standard forward"""
         return self.model(input)
+
     
 
 # Define networks
@@ -606,7 +601,7 @@ def define_S(input_nc, output_nc, ngf, netS, norm='batch', use_dropout=False, in
     
     if netS == 'resnet':
         net = ResNetSegmentor(input_nc, output_nc, ngf, norm_layer=norm_layer, use_dropout=use_dropout, antialias=antialias, antialias_up=antialias_up, n_blocks=5, opt=opt)
-    elif netS == 'unet_128':
+    elif netS == 'unet_128': # for 128x128 image
         net = UnetSegmentor(input_nc, output_nc, 7, ngf, norm_layer, use_dropout)
     elif netS == 'unet_256':
         net = UnetSegmentor(input_nc, output_nc, 8, ngf, norm_layer, use_dropout)
