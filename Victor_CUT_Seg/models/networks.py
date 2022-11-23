@@ -504,7 +504,7 @@ class UnetSkipConnectionBlock(nn.Module):
             return torch.cat([x, self.model(x)], 1)
 
 class UnetSegmentor(nn.Module):
-    def __init__(self, input_nc, num_downs, output_nc=2, ngf=64, norm_layer=nn.BatchNorm2d, use_dropout=False) -> None:
+    def __init__(self, input_nc, output_nc, num_downs, ngf=64, norm_layer=nn.BatchNorm2d, use_dropout=False) -> None:
         super(UnetSegmentor, self).__init__()
         # construct unet structure
         unet_block = UnetSkipConnectionBlock(ngf * 8, ngf * 8, input_nc=None, submodule=None, norm_layer=norm_layer, innermost=True) # add the innermost layer
@@ -569,9 +569,9 @@ def define_S(input_nc, output_nc, ngf, netS, norm='batch', use_dropout=False, in
     if netS == 'resnet':
         net = ResNetSegmentor(input_nc, output_nc, ngf, norm_layer=norm_layer, use_dropout=use_dropout, antialias=antialias, antialias_up=antialias_up, n_blocks=5, opt=opt)
     elif netS == 'unet_128':
-        net = UnetSegmentor(input_nc, 7, output_nc, ngf, norm_layer, use_dropout)
+        net = UnetSegmentor(input_nc, output_nc, 7, ngf, norm_layer, use_dropout)
     elif netS == 'unet_256':
-        net = UnetSegmentor(input_nc, 8, output_nc, ngf, norm_layer, use_dropout)
+        net = UnetSegmentor(input_nc, output_nc, 8, ngf, norm_layer, use_dropout)
     else:
         raise NotImplementedError('Segmentor model name [%s] is not recognized'% netS)
     
