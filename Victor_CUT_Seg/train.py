@@ -1,9 +1,12 @@
 """
-v4 trains the resnet segmentor first for 50 epochs, then train the whole composite network
-v5 trains the unet segmentor first, then the whole composite network
+v8 uses smp segmentor and dice score to train the whole network
+v7 uses the smp segmentor, the loss function is normal BCE, the whole network is trained at the same time.
+v5 trains the resnet segmentor first for 50 epochs, then train the whole composite network
+v4 trains the unet segmentor first, then the whole composite network
 """
 from options.train_options import ArgParse
 from models.cut_seg import CUT_SEG_model
+from models.cycleGAN import CycleGAN
 from utils.create_dataset import EczemaDataset
 import torch
 from torch.utils.data import DataLoader
@@ -37,8 +40,22 @@ def on_epoch_end(generator, segmenter, source_dataset, target_dataset, save_dir,
     # generate imgs from the random picked dataset
     for i, idx in enumerate(zip(source_random_idx,target_random_idx)):
         source_tensor, target_tensor = source_dataset[idx[0]], target_dataset[idx[1]]
+
+        if torch.cuda.is_available():
+            device = torch.device('cuda')
+        elif torch.backends.mps.is_available():
+            device = torch.device('mps')
+        else: device = torch.device('cpu')
+
+        source_tensor = source_tensor
+        target_tensor = target_tensor
+
         src_input, src_real = source_tensor
         tar_input, tar_real = target_tensor
+        src_input = src_input.to(device)
+        src_real = src_real.to(device)
+        tar_input = tar_input.to(device)
+        tar_real = tar_real.to(device)
         
         # generate the predicted mask for the src img
         pr_src_mask = segmenter(src_real.unsqueeze(0))
@@ -49,6 +66,7 @@ def on_epoch_end(generator, segmenter, source_dataset, target_dataset, save_dir,
         # use the predicted mask to mask out the src img
         real_img = util.tensor2img(src_real)
         masked_real_img = util.mask_image(pr_src_mask, real_img)
+        pr_masked_real = (masked_real_img * 127.5 + 127.5).astype(np.uint8)
         
         # cast the masked real img into tensor
         masked_real_img = util.img2tensor(masked_real_img)
@@ -79,10 +97,10 @@ def on_epoch_end(generator, segmenter, source_dataset, target_dataset, save_dir,
         target = (target * 127.5 + 127.5).astype(np.uint8)
         
         if ax.ndim == 1:
-            [ax[j].imshow(img) for j, img in enumerate([source_img, translated, unmasked_trans,target, idt, ori_mask, pr_src_mask, util.tensor2img(masked_real_img)])]
+            [ax[j].imshow(img) for j, img in enumerate([source_img, translated, unmasked_trans,target, idt, ori_mask, pr_src_mask, pr_masked_real])]
             [ax[j].axis("off") for j in range(len(titles))]
         elif ax.ndim > 1:
-            [ax[i, j].imshow(img) for j, img in enumerate([source_img, translated, unmasked_trans,target, idt, ori_mask, pr_src_mask, util.tensor2img(masked_real_img)])]
+            [ax[i, j].imshow(img) for j, img in enumerate([source_img, translated, unmasked_trans,target, idt, ori_mask, pr_src_mask, pr_masked_real])]
             [ax[i, j].axis("off") for j in range(len(titles))]
     
     save_dir = os.path.join(save_dir, 'img')
@@ -109,7 +127,10 @@ if __name__ == '__main__':
     tar_dataloader = DataLoader(train_tar, batch_size=BATCH_SIZE, drop_last=DROP_LAST, shuffle=SHUFFLE)
     
     # create the model
-    model = CUT_SEG_model(opt)
+    if opt.CycleGAN:
+        model = CycleGAN(opt)
+    else: 
+        model = CUT_SEG_model(opt)
     loss_hist = []
 
     if opt.load:
@@ -132,14 +153,8 @@ if __name__ == '__main__':
                 model.setup(opt)               # regular setup: load and print networks; create schedulers
                 model.parallelize()
 
-            if epoch <= 50:
-                # print(f'epoch = {epoch}, train segmentor only')
-                model.set_input(data)
-                model.optimize_segmentor() # optimize the segmentor first
-            else:
-                # print(f'epoch = {epoch}, train the composite network')
-                model.set_input(data)  # unpack data from dataset and apply preprocessing
-                model.optimize_parameters()   # calculate loss functions, get gradients, update network weights
+            model.set_input(data)  # unpack data from dataset and apply preprocessing
+            model.optimize_parameters()   # calculate loss functions, get gradients, update network weights
         
         # end of one epoch
         if epoch % opt.save_epoch_freq == 0: # cache our model every <save_epoch_freq> epochs
@@ -155,7 +170,10 @@ if __name__ == '__main__':
 
         # generate and save images after each epoch end
         print(f'save generated images')
-        on_epoch_end(model.netG, model.netS, test_src, test_tar, opt.out_dir, epoch, num_img=1)
+        if opt.CycleGAN:
+            on_epoch_end(model.netG_A, model.netS_A, test_src, test_tar, opt.out_dir, epoch, num_img=1)
+        else:
+            on_epoch_end(model.netG, model.netS, test_src, test_tar, opt.out_dir, epoch, num_img=1)
         print(f'images are generated successfully')
 
         print('End of epoch %d / %d \t Time Taken: %d sec' % (epoch, opt.n_epochs + opt.n_epochs_decay, time.time() - epoch_start_time))

@@ -13,15 +13,15 @@ def ArgParse():
     parser.add_argument('--train_tar_dir', help='Train-target dataset folder', type=str, default='datasets/datasets_paired/train/pairedB')
     parser.add_argument('--test_src_dir', help='Test-source dataset folder', type=str, default='datasets/datasets_paired/test/pairedA')
     parser.add_argument('--test_tar_dir', help='Test-target dataset folder', type=str, default='datasets/datasets_paired/test/pairedB')
-    parser.add_argument('--name', type=str, default='demo_v5', help='name of the experiment. It decides where to store samples and models')
-    parser.add_argument('--easy_label', type=str, default='demo_v5', help='Interpretable name')
+    parser.add_argument('--name', type=str, default='demo_v4', help='name of the experiment. It decides where to store samples and models')
+    parser.add_argument('--easy_label', type=str, default='demo_v4', help='Interpretable name')
     parser.add_argument('--checkpoints_dir', type=str, default='./checkpoints', help='models are saved here')
     parser.add_argument('--load', help='if to load the network', action='store_true')
     parser.add_argument('--load_epoch', help='which checkpoint to load', type=int, default=5)
     # the output dir is set for demo
-    parser.add_argument('--out_dir', help='Outputs folder', type=str, default='./output/victor_demo_v5')
+    parser.add_argument('--out_dir', help='Outputs folder', type=str, default='./output/victor_demo_v4')
     
-    # model parameters
+    # model parameters for CUT
     """GAN parameters"""
     parser.add_argument('--CUT_mode', type=str, default="CUT", choices=['CUT', 'cut', 'FastCUT', 'fastcut'], help='')
     parser.add_argument('--input_nc', type=int, default=3, help='# of input image channels: 3 for RGB and 1 for grayscale')
@@ -49,14 +49,25 @@ def ArgParse():
     parser.add_argument('--nce_T', type=float, default=0.07, help='temperature for NCE loss')
     parser.add_argument('--num_patches', type=int, default=256, help='number of patches per layer')
     """netS parameters"""
-    parser.add_argument('--netS', type=str, default='resnet', choices=['resnet', 'unet_128', 'unet_256'], help='how to segment the input image')
+    parser.add_argument('--netS', type=str, default='resnet', choices=['resnet', 'unet_256', 'smp'], help='how to segment the input image')
+    parser.add_argument('--smp_arch', type=str, default='Unet', help='the segmentor architectur')
+    parser.add_argument('--smp_encoder', type=str, default='efficientnet-b3', help='the encoder name')
     parser.add_argument('--normS', type=str, default='instance', choices=['instance', 'batch', 'none'], help='instance normalization or batch normalization for S')
     parser.add_argument('--num_class', type=int, default=2, help='# of output image channels for segmented mask')
     parser.add_argument('--netS_lambda', type=int, default=10, help='lambda for SEG loss')
+    parser.add_argument('--netS_Loss', type=str, help='semantic segmentation loss function', choices=['dice', 'bce', 'DICE', 'BCE'], default='bce')
 
     parser.add_argument('--flip_equivariance',
                         type=bool, nargs='?', default=False,
                         help="Enforce flip-equivariance as additional regularization. It's used by FastCUT, but not CUT")
+
+    # model parameters for CycleGAN
+    parser.add_argument('--CycleGAN', type=util.str2bool, default=False, help='if to use CycleGAN')
+    parser.add_argument('--lambda_A', type=float, default=10.0, help='weight for cycle loss (A -> B -> A)')
+    parser.add_argument('--lambda_B', type=float, default=10.0, help='weight for cycle loss (B -> A -> B)')
+    parser.add_argument('--lambda_identity', type=float, default=0.5, help='use identity mapping. Setting lambda_identity other than 0 has an effect of scaling the weight of the identity mapping loss.\
+                        For example, if the weight of the identity loss should be 10 times smaller than the weight of the reconstruction loss, please set lambda_identity = 0.1')
+    parser.add_argument('--pool_size', type=int, default=100, help='the size of image pool')
     
     # training parameters
     parser.add_argument('--n_epochs', type=int, default=200, help='number of epochs with the initial learning rate')
