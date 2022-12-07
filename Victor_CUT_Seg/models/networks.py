@@ -5,6 +5,8 @@ from torch.nn import init
 import functools
 from torch.optim import lr_scheduler
 import numpy as np
+import segmentation_models_pytorch as smp
+from segmentation_models_pytorch.encoders import get_preprocessing_fn
 
 
 from .layers import Downsample, Upsample
@@ -272,57 +274,6 @@ class Discriminator(nn.Module):
         """Standard forward."""
         return self.model(input)
     
-# class ResnetEncoder(nn.Module):
-#     """Resnet-based encoder that consists of a few downsampling + several Resnet blocks
-#     """
-
-#     def __init__(self, input_nc, output_nc, ngf=64, norm_layer=nn.BatchNorm2d, use_dropout=False, n_blocks=6, padding_type='reflect', antialias=False):
-#         """Construct a Resnet-based encoder
-
-#         Parameters:
-#             input_nc (int)      -- the number of channels in input images
-#             output_nc (int)     -- the number of channels in output images
-#             ngf (int)           -- the number of filters in the last conv layer
-#             norm_layer          -- normalization layer
-#             use_dropout (bool)  -- if use dropout layers
-#             n_blocks (int)      -- the number of ResNet blocks
-#             padding_type (str)  -- the name of padding layer in conv layers: reflect | replicate | zero
-#         """
-#         assert(n_blocks >= 0)
-#         super(ResnetEncoder, self).__init__()
-#         if type(norm_layer) == functools.partial:
-#             use_bias = norm_layer.func == nn.InstanceNorm2d
-#         else:
-#             use_bias = norm_layer == nn.InstanceNorm2d
-
-#         model = [nn.ReflectionPad2d(3),
-#                  nn.Conv2d(input_nc, ngf, kernel_size=7, padding=0, bias=use_bias),
-#                  norm_layer(ngf),
-#                  nn.ReLU(True)]
-
-#         n_downsampling = 2
-#         for i in range(n_downsampling):  # add downsampling layers
-#             mult = 2 ** i
-
-#             if antialias:
-#                 model += [nn.Conv2d(ngf * mult, ngf * mult * 2, kernel_size=3, stride=1, padding=1, bias=use_bias),
-#                           norm_layer(ngf * mult * 2),
-#                           nn.ReLU(True),
-#                           Downsample(ngf * mult * 2)]
-#             else:
-#                 model += [nn.Conv2d(ngf * mult, ngf * mult * 2, kernel_size=3, stride=2, padding=1, bias=use_bias),
-#                           norm_layer(ngf * mult * 2),
-#                           nn.ReLU(True)]
-
-#         mult = 2 ** n_downsampling
-#         for i in range(n_blocks):       # add ResNet blocks
-#             model += [ResnetBlock(ngf * mult, padding_type=padding_type, norm_layer=norm_layer, use_dropout=use_dropout, use_bias=use_bias)]
-
-#         self.model = nn.Sequential(*model)
-
-#     def forward(self, input):
-#         """Standard forward"""
-#         return self.model(input)
     
 class ResNetSegmentor(nn.Module):
     """Resnet-based segmentor that consists of a few downsampling + several Resnet blocks
@@ -553,6 +504,26 @@ class UnetSegmentor(nn.Module):
         """Standard forward"""
         return self.model(input)
 
+class SMPmodel(nn.Module):
+    """Create segmentor using smp"""
+    def __init__(self, arch, encoder_name, input_nc, output_nc):
+        super(SMPmodel, self).__init__()
+        self.model = smp.create_model(
+            arch=arch, encoder_name=encoder_name, in_channels=input_nc, classes=output_nc, activation='sigmoid'
+        )
+        # preprocessing parameters for image
+        params = smp.encoders.get_preprocessing_params(encoder_name=encoder_name)
+        self.register_buffer("std", torch.tensor(params["std"]).view(1, 3, 1, 1))
+        self.register_buffer("mean", torch.tensor(params["mean"]).view(1, 3, 1, 1))
+
+        # for image segmentation dice loss could be the best first choice
+        self.loss_fn = smp.losses.DiceLoss(smp.losses.BINARY_MODE, from_logits=True)
+
+    def forward(self, image):
+        # normalize image here
+        image = (image - self.mean) / self.std
+        mask = self.model(image)
+        return mask
     
 
 # Define networks
@@ -601,10 +572,10 @@ def define_S(input_nc, output_nc, ngf, netS, norm='batch', use_dropout=False, in
     
     if netS == 'resnet':
         net = ResNetSegmentor(input_nc, output_nc, ngf, norm_layer=norm_layer, use_dropout=use_dropout, antialias=antialias, antialias_up=antialias_up, n_blocks=5, opt=opt)
-    elif netS == 'unet_128': # for 128x128 image
-        net = UnetSegmentor(input_nc, output_nc, 7, ngf, norm_layer, use_dropout)
     elif netS == 'unet_256':
         net = UnetSegmentor(input_nc, output_nc, 8, ngf, norm_layer, use_dropout)
+    elif netS == 'smp':
+        net = SMPmodel(opt.smp_arch, opt.smp_encoder, input_nc=input_nc, output_nc=output_nc)
     else:
         raise NotImplementedError('Segmentor model name [%s] is not recognized'% netS)
     

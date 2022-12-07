@@ -12,7 +12,7 @@ from collections import OrderedDict
 
 import utils.util as util
 from .networks import define_G, define_F, define_S, define_D, get_scheduler
-from .losses import GANLoss, SEGLoss, PatchNCELoss
+from .losses import GANLoss, SEGLoss, PatchNCELoss, DiceLoss
 
 class CUT_SEG_model(nn.Module):
     def __init__(self, opt):
@@ -56,7 +56,12 @@ class CUT_SEG_model(nn.Module):
             # define loss functions
             self.criterionGAN = GANLoss().to(self.device)
             self.criterionNCE = []
-            self.criterionSEG = SEGLoss(seg_lambda=opt.netS_lambda).to(self.device)
+            if opt.netS_Loss == 'bce' or opt.netS_Loss == 'BCE':
+                self.criterionSEG = SEGLoss(seg_lambda=opt.netS_lambda).to(self.device)
+            elif opt.netS_Loss == 'dice' or opt.netS_Loss == 'DICE':
+                self.criterionSEG = DiceLoss().to(self.device)
+            else: 
+                raise NotImplementedError('segmentation loss function is not implemented')
             
             for _ in self.nce_layers:
                 nceLoss = PatchNCELoss(opt).to(self.device)
