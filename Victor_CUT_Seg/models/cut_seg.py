@@ -15,12 +15,6 @@ class CUT_SEG_model(BaseModel):
     The code borrows heavily from the PyTorch implementation of CycleGAN
     https://github.com/junyanz/pytorch-CycleGAN-and-pix2pix
     """
-    @staticmethod
-    def modify_commandline_options(parser, is_train=True):
-        """  Configures options specific for CUT model
-        """
-        return parser
-
     def __init__(self, opt):
         """we pass the segmentor as an argument to this model"""
         BaseModel.__init__(self, opt)
@@ -102,7 +96,6 @@ class CUT_SEG_model(BaseModel):
         self.forward() # compute segmentation and fake image
         if self.opt.isTrain:
             self.compute_D_loss().backward() # calculate gradients for D
-            # self.compute_S_loss().backward() # calculate gradients for S
             self.compute_G_loss().backward() # calculate graidents for G
             if self.opt.lambda_NCE > 0.0:
                 self.optimizer_F = torch.optim.Adam(self.netF.parameters(), lr=self.opt.lr, betas=(self.opt.beta1, self.opt.beta2))
@@ -118,13 +111,6 @@ class CUT_SEG_model(BaseModel):
         self.loss_D = self.compute_D_loss()
         self.loss_D.backward()
         self.optimizer_D.step()
-
-        # update S
-        # self.set_requires_grad(self.netS, True)
-        # self.optimizer_S.zero_grad()
-        # self.loss_S = self.compute_S_loss()
-        # self.loss_S.backward()
-        # self.optimizer_S.step()
 
         # update G
         self.set_requires_grad(self.netD, False)
@@ -200,21 +186,6 @@ class CUT_SEG_model(BaseModel):
         # combine loss and calculate gradients
         self.loss_D = (self.loss_D_fake + self.loss_D_real) * 0.5
         return self.loss_D
-    
-    # def compute_S_loss(self):
-    #     """Calculate SEG loss for the segmentor"""
-    #     fake_mask = self.netS(self.real)
-    #     self.loss_S_real = self.criterionSEG(fake_mask, self.mask).mean()
-
-    #     fake_B = self.fake_B.detach()
-    #     fake_B_mask = self.netS(fake_B)
-    #     self.loss_S_fake = self.criterionSEG(fake_B_mask, self.mask_A).mean()
-
-    #     self.loss_SEG = (self.loss_S_real + self.loss_S_fake) * 0.5
-
-    #     self.loss_S = self.loss_SEG 
-    #     # loss_S is used to optimize SEG 
-    #     return self.loss_S
         
     def compute_G_loss(self):
         """Calculate GAN and NCE loss for the generator"""

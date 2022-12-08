@@ -10,17 +10,6 @@ from utils import util
 
 
 class CycleGAN(BaseModel):
-    @staticmethod
-    def modify_commandline_options(parser, is_train=True):
-        parser.add_argument('--CycleGAN', type=util.str2bool, default=False, help='if to use CycleGAN')
-        parser.add_argument('--lambda_A', type=float, default=10.0, help='weight for cycle loss (A -> B -> A)')
-        parser.add_argument('--lambda_B', type=float, default=10.0, help='weight for cycle loss (B -> A -> B)')
-        parser.add_argument('--lambda_identity', type=float, default=0.5, help='use identity mapping. Setting lambda_identity other than 0 has an effect of scaling the weight of the identity mapping loss.\
-                            For example, if the weight of the identity loss should be 10 times smaller than the weight of the reconstruction loss, please set lambda_identity = 0.1')
-        parser.add_argument('--pool_size', type=int, default=100, help='the size of image pool')
-
-        return parser
-
     def __init__(self, opt, netS):
         BaseModel.__init__(self, opt)
         self.opt = opt
@@ -34,8 +23,6 @@ class CycleGAN(BaseModel):
         
         self.netG_A = define_G(opt.input_nc, opt.output_nc, opt.ngf, opt.netG, opt.normG, not opt.no_dropout, opt.init_type, opt.init_gain, opt.antialias, opt.antialias_up, opt)
         self.netG_B = define_G(opt.input_nc, opt.output_nc, opt.ngf, opt.netG, opt.normG, not opt.no_dropout, opt.init_type, opt.init_gain, opt.antialias, opt.antialias_up, opt)
-        # self.netS_A = define_S(opt.input_nc, opt.num_class, opt.ngf, opt.netS, opt.normS, not opt.no_dropout, opt.init_type, opt.init_gain, opt.antialias, opt.antialias_up, opt)
-        # self.netS_B = define_S(opt.input_nc, opt.num_class, opt.ngf, opt.netS, opt.normS, not opt.no_dropout, opt.init_type, opt.init_gain, opt.antialias, opt.antialias_up, opt)
         self.netS = netS
 
         if self.opt.isTrain:  # define discriminators
@@ -92,13 +79,10 @@ class CycleGAN(BaseModel):
         masked_real_A_img = util.mask_image(mask_A_img, real_A_img)
         masked_real_B_img = util.mask_image(mask_B_img, real_B_img)
         self.masked_real_A = util.img2tensor(masked_real_A_img).to(self.device)
-        self.masked_real_B = util.img2tensor(masked_real_B_img).to(self.device)
-
-        # self.masked_real = torch.cat((self.masked_real_A, self.masked_real_B), dim=0) if self.opt.nce_idt and self.opt.isTrain else self.masked_real_A    
+        self.masked_real_B = util.img2tensor(masked_real_B_img).to(self.device) 
 
     def forward(self):
         """Run forward pass; called by both functions <optimize_parameters> and <test>."""
-
         # mask out the input image using the ground truth mask and generate fake image use the masked real image only if it is training
         if self.isTrain:
             self.mask_realImage()
@@ -143,32 +127,6 @@ class CycleGAN(BaseModel):
         """Calculate GAN loss for discriminator D_B"""
         fake_A = self.fake_A_pool.query(self.fake_A)
         self.loss_D_B = self.backward_D_basic(self.netD_B, self.real_A, fake_A)
-    
-    # def backward_S(self):
-    #     lambda_A = self.opt.lambda_A
-    #     lambda_B = self.opt.lambda_B
-        
-    #     self.loss_S_A = self.criterionSEG(self.netS_A(self.real_A), self.mask_A).mean()
-    #     self.loss_S_B = self.criterionSEG(self.netS_B(self.real_B), self.mask_B).mean()
-
-    #     fake_A = self.fake_A.detach()
-    #     fake_A_mask = self.netS_A(fake_A)
-    #     self.loss_S_A_fake = self.criterionSEG(fake_A_mask, self.mask_A).mean()
-
-    #     fake_B = self.fake_B.detach()
-    #     fake_B_mask = self.netS_B(fake_B)
-    #     self.loss_S_B_fake = self.criterionSEG(fake_B_mask, self.mask_B).mean()
-
-    #     rec_A = self.rec_A.detach()
-    #     rec_A_mask = self.netS_A(rec_A)
-    #     self.loss_S_recA = self.criterionSEG(rec_A_mask, self.mask_A).mean() * lambda_A
-
-    #     rec_B = self.rec_B.detach()
-    #     rec_B_mask = self.netS_B(rec_B)
-    #     self.loss_S_recB = self.criterionSEG(rec_B_mask, self.mask_B).mean() * lambda_B
-
-    #     self.loss_S = self.loss_S_A + self.loss_S_B + self.loss_S_A_fake + self.loss_S_B_fake + self.loss_S_recA + self.loss_S_recB
-    #     self.loss_S.backward()
     
     def backward_G(self):
         """Calculate the loss for generators G_A and G_B"""
@@ -218,19 +176,17 @@ class CycleGAN(BaseModel):
         """Calculate losses, gradients, and update network weights; called in every training iteration"""
         # forward
         self.forward()      # compute fake images and reconstruction images.
-        # S_A and S_B
-        # self.set_requires_grad([self.netS_A, self.netS_B], True)
-        # self.optimizer_S.zero_grad()
-        # self.backward_S()
-        # self.optimizer_S.step()
-        # G_A and G_B
-        self.set_requires_grad([self.netD_A, self.netD_B], False)  # Ds require no gradients when optimizing Gs
-        self.optimizer_G.zero_grad()  # set G_A and G_B's gradients to zero
-        self.backward_G()             # calculate gradients for G_A and G_B
-        self.optimizer_G.step()       # update G_A and G_B's weights
+
         # D_A and D_B
         self.set_requires_grad([self.netD_A, self.netD_B], True)
         self.optimizer_D.zero_grad()   # set D_A and D_B's gradients to zero
         self.backward_D_A()      # calculate gradients for D_A
         self.backward_D_B()      # calculate graidents for D_B
         self.optimizer_D.step()  # update D_A and D_B's weight
+
+        # G_A and G_B
+        self.set_requires_grad([self.netD_A, self.netD_B], False)  # Ds require no gradients when optimizing Gs
+        self.optimizer_G.zero_grad()  # set G_A and G_B's gradients to zero
+        self.backward_G()             # calculate gradients for G_A and G_B
+        self.optimizer_G.step()       # update G_A and G_B's weights
+        
