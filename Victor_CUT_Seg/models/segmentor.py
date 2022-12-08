@@ -7,12 +7,6 @@ from .losses import SEGLoss, DiceLoss
 
 
 class Segmentor(BaseModel):
-    @staticmethod
-    def modify_commandline_options(parser, is_train=True):
-        """  Configures options specific for CUT model
-        """
-        return parser
-    
     def __init__(self, opt):
         BaseModel.__init__(self, opt)
         self.opt = opt

@@ -152,10 +152,10 @@ if __name__ == '__main__':
 
         # generate and save images after each epoch end
         print(f'save generated images')
-        if opt.CycleGAN:
-            on_epoch_end(model.netG_A, model.netS_A, test_src, test_tar, opt.out_dir, epoch, num_img=1)
-        else:
-            on_epoch_end(model.netG, model.netS, test_src, test_tar, opt.out_dir, epoch, num_img=1)
+        if opt.model == 'cyclegan':
+            on_epoch_end(model.netG_A, model.netS_A, test_src, test_tar, opt.out_dir, epoch, num_img=2)
+        elif opt.model == 'cut_seg':
+            on_epoch_end(model.netG, model.netS, test_src, test_tar, opt.out_dir, epoch, num_img=2)
         print(f'images are generated successfully')
 
         print('End of epoch %d / %d \t Time Taken: %d sec' % (epoch, opt.n_epochs + opt.n_epochs_decay, time.time() - epoch_start_time))
