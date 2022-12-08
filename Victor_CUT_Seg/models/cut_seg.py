@@ -1,53 +1,51 @@
-""" Create a CUT/FastCUT model, described in the paper
-Contrastive Learning for Unpaired Image-to-Image Translation
-Taesung Park, Alexei A. Efros, Richard Zhang, Jun-Yan Zhu
-ECCV, 2020 (https://arxiv.org/abs/2007.15651).
-"""
-
 import numpy as np
 import os
 import torch
-import torch.nn as nn
-from collections import OrderedDict
 
 import utils.util as util
-from .networks import define_G, define_F, define_S, define_D, get_scheduler
+from .base_model import BaseModel
+from .networks import define_G, define_F,define_D, define_S
 from .losses import GANLoss, SEGLoss, PatchNCELoss, DiceLoss
 
-class CUT_SEG_model(nn.Module):
+class CUT_SEG_model(BaseModel):
+    """ This class implements CUT and FastCUT model, described in the paper
+    Contrastive Learning for Unpaired Image-to-Image Translation
+    Taesung Park, Alexei A. Efros, Richard Zhang, Jun-Yan Zhu
+    ECCV, 2020
+    The code borrows heavily from the PyTorch implementation of CycleGAN
+    https://github.com/junyanz/pytorch-CycleGAN-and-pix2pix
+    """
+    @staticmethod
+    def modify_commandline_options(parser, is_train=True):
+        """  Configures options specific for CUT model
+        """
+        return parser
+
     def __init__(self, opt):
-        super(CUT_SEG_model, self).__init__()
+        """we pass the segmentor as an argument to this model"""
+        BaseModel.__init__(self, opt)
         self.opt = opt
-        self.optimizers = []
         # specify the training losses you want to print out.
-        self.loss_names = ['G_GAN', 'D_real', 'D_fake', 'G', 'NCE', 'SEG']
+        self.loss_names = ['G_GAN', 'D_real', 'D_fake', 'G', 'NCE']
         self.nce_layers = [int(i) for i in self.opt.nce_layers.split(',')]
-        
-        if torch.cuda.is_available():
-            self.device = torch.device('cuda')
-        elif torch.backends.mps.is_available():
-            self.device = torch.device('mps')
-        else: self.device = torch.device('cpu')
 
         print(f'using device: {self.device}')
         
         if self.opt.isTrain:
-            self.model_names = ['G', 'F', 'D', 'S']
+            self.model_names = ['G', 'F', 'D']
         else:  # during test time, only load G and S
-            self.model_names = ['G', 'S']
+            self.model_names = ['G']
 
         if self.opt.nce_idt and self.opt.isTrain:
             self.loss_names += ['NCE_Y']
             
         # define the generator, G
-        # print(opt.input_nc, opt.output_nc, opt.ngf, opt.netG)
         self.netG = define_G(opt.input_nc, opt.output_nc, opt.ngf, opt.netG, opt.normG, not opt.no_dropout, opt.init_type, opt.init_gain, opt.antialias, opt.antialias_up, opt)
         # define the sampler, F
-        # print(opt.input_nc, opt.output_nc, opt.ngf, opt.netF)
         self.netF = define_F(opt.input_nc, opt.netF, opt.normG, not opt.no_dropout, opt.init_type, opt.init_gain, opt.antialias, opt)
         # define the segmentor, S
-        # print(opt.input_nc, opt.output_nc, opt.ngf, opt.netS)
         self.netS = define_S(opt.input_nc, opt.num_class, opt.ngf, opt.netS, opt.normS, not opt.no_dropout, opt.init_type, opt.init_gain, opt.antialias, opt.antialias_up, opt)
+        self.load_netS(path=opt.load_seg_path, epoch=opt.load_seg_epoch)
         
         if self.opt.isTrain:
             # print(opt.output_nc, opt.ndf, opt.netD)
@@ -71,14 +69,28 @@ class CUT_SEG_model(nn.Module):
             # define the optimizers
             self.optimizer_G = torch.optim.Adam(self.netG.parameters(), lr=opt.lr, betas=(opt.beta1, opt.beta2))
             self.optimizer_D = torch.optim.Adam(self.netD.parameters(), lr=opt.lr, betas=(opt.beta1, opt.beta2))
-            self.optimizer_S = torch.optim.Adam(self.netS.parameters(), lr=opt.lr, betas=(opt.beta1, opt.beta2))
             self.optimizers.append(self.optimizer_G)
             self.optimizers.append(self.optimizer_D)
-            self.optimizers.append(self.optimizer_S)
+    
+    def load_netS(self, path, epoch):
+        """Load all the networks from the disk.
+
+        Parameters:
+            epoch (int) -- current epoch; used in the file name '%s_net_%s.pth' % (epoch, name)
+        """
+        load_filename = '%s_net_%s.pth' % (epoch, 'S')
+        load_path = os.path.join(path, load_filename)
+        netS = getattr(self, 'netS')
+        if isinstance(netS, torch.nn.DataParallel):
+            netS = netS.module
+        state_dict = torch.load(load_path, map_location=str(self.device))
+        if hasattr(state_dict, '_metadata'):
+            del state_dict._metadata
+        netS.load_state_dict(state_dict)
         
-        # other utilities
-        self.save_dir = os.path.join(opt.checkpoints_dir, opt.name)
-            
+        self.netS = netS
+
+
     def data_dependent_initialize(self, data):
         """
         The feature network netF is defined in terms of the shape of the intermediate, extracted
@@ -90,23 +102,11 @@ class CUT_SEG_model(nn.Module):
         self.forward() # compute segmentation and fake image
         if self.opt.isTrain:
             self.compute_D_loss().backward() # calculate gradients for D
-            self.compute_S_loss().backward() # calculate gradients for S
+            # self.compute_S_loss().backward() # calculate gradients for S
             self.compute_G_loss().backward() # calculate graidents for G
             if self.opt.lambda_NCE > 0.0:
                 self.optimizer_F = torch.optim.Adam(self.netF.parameters(), lr=self.opt.lr, betas=(self.opt.beta1, self.opt.beta2))
                 self.optimizers.append(self.optimizer_F)
-    
-    """optimize the segmentor for the first 100 epoch, to generate good masks first"""
-    def optimize_segmentor(self):
-        # forward
-        self.forward()
-
-        # update S
-        self.set_requires_grad(self.netS, True)
-        self.optimizer_S.zero_grad()
-        self.loss_S = self.compute_S_loss()
-        self.loss_S.backward()
-        self.optimizer_S.step()
     
     def optimize_parameters(self):
         # forward
@@ -120,11 +120,11 @@ class CUT_SEG_model(nn.Module):
         self.optimizer_D.step()
 
         # update S
-        self.set_requires_grad(self.netS, True)
-        self.optimizer_S.zero_grad()
-        self.loss_S = self.compute_S_loss()
-        self.loss_S.backward()
-        self.optimizer_S.step()
+        # self.set_requires_grad(self.netS, True)
+        # self.optimizer_S.zero_grad()
+        # self.loss_S = self.compute_S_loss()
+        # self.loss_S.backward()
+        # self.optimizer_S.step()
 
         # update G
         self.set_requires_grad(self.netD, False)
@@ -179,7 +179,7 @@ class CUT_SEG_model(nn.Module):
                 self.real = torch.flip(self.real, [3])
 
         # mask out the input image using the ground truth mask and generate fake image use the masked real image only if it is training
-        if self.opt.isTrain:
+        if self.isTrain:
             self.mask_realImage()
             self.fake = self.netG(self.masked_real)
         else: self.fake = self.netG(self.real)
@@ -201,20 +201,20 @@ class CUT_SEG_model(nn.Module):
         self.loss_D = (self.loss_D_fake + self.loss_D_real) * 0.5
         return self.loss_D
     
-    def compute_S_loss(self):
-        """Calculate SEG loss for the segmentor"""
-        fake_mask = self.netS(self.real)
-        self.loss_S_real = self.criterionSEG(fake_mask, self.mask).mean()
+    # def compute_S_loss(self):
+    #     """Calculate SEG loss for the segmentor"""
+    #     fake_mask = self.netS(self.real)
+    #     self.loss_S_real = self.criterionSEG(fake_mask, self.mask).mean()
 
-        fake_B = self.fake_B.detach()
-        fake_B_mask = self.netS(fake_B)
-        self.loss_S_fake = self.criterionSEG(fake_B_mask, self.mask_A).mean()
+    #     fake_B = self.fake_B.detach()
+    #     fake_B_mask = self.netS(fake_B)
+    #     self.loss_S_fake = self.criterionSEG(fake_B_mask, self.mask_A).mean()
 
-        self.loss_SEG = (self.loss_S_real + self.loss_S_fake) * 0.5
+    #     self.loss_SEG = (self.loss_S_real + self.loss_S_fake) * 0.5
 
-        self.loss_S = self.loss_SEG 
-        # loss_S is used to optimize SEG 
-        return self.loss_S
+    #     self.loss_S = self.loss_SEG 
+    #     # loss_S is used to optimize SEG 
+    #     return self.loss_S
         
     def compute_G_loss(self):
         """Calculate GAN and NCE loss for the generator"""
@@ -264,135 +264,3 @@ class CUT_SEG_model(nn.Module):
             total_nce_loss += loss.mean()
 
         return total_nce_loss / n_layers
-    
-    
-    """Auxilary functions"""
-    def set_requires_grad(self, nets, requires_grad=False):
-        """Set requies_grad=Fasle for all the networks to avoid unnecessary computations
-        Parameters:
-            nets (network list)   -- a list of networks
-            requires_grad (bool)  -- whether the networks require gradients or not
-        """
-        if not isinstance(nets, list):
-            nets = [nets]
-        for net in nets:
-            if net is not None:
-                for param in net.parameters():
-                    param.requires_grad = requires_grad
-
-    def save_networks(self, epoch):
-        """Save all the networks to the disk.
-
-        Parameters:
-            epoch (int) -- current epoch; used in the file name '%s_net_%s.pth' % (epoch, name)
-        """
-        for name in self.model_names:
-            if isinstance(name, str):
-                save_filename = '%s_net_%s.pth' % (epoch, name)
-                save_path = os.path.join(self.save_dir, save_filename)
-                net = getattr(self, 'net' + name)
-
-                if torch.cuda.is_available():
-                    torch.save(net.module.cpu().state_dict(), save_path)
-                    net.cuda()
-                else:
-                    torch.save(net.cpu().state_dict(), save_path)
-    
-    def load_networks(self, epoch):
-        """Load all the networks from the disk.
-
-        Parameters:
-            epoch (int) -- current epoch; used in the file name '%s_net_%s.pth' % (epoch, name)
-        """
-        for name in self.model_names:
-            if isinstance(name, str):
-                load_filename = '%s_net_%s.pth' % (epoch, name)
-                if self.opt.isTrain and self.opt.pretrained_name is not None:
-                    load_dir = os.path.join(self.opt.checkpoints_dir, self.opt.pretrained_name)
-                else:
-                    load_dir = self.save_dir
-
-                load_path = os.path.join(load_dir, load_filename)
-                net = getattr(self, 'net' + name)
-                if isinstance(net, torch.nn.DataParallel):
-                    net = net.module
-                print('loading the model from %s' % load_path)
-                # if you are using PyTorch newer than 0.4 (e.g., built from
-                # GitHub source), you can remove str() on self.device
-                state_dict = torch.load(load_path, map_location=str(self.device))
-                if hasattr(state_dict, '_metadata'):
-                    del state_dict._metadata
-
-                # patch InstanceNorm checkpoints prior to 0.4
-                # for key in list(state_dict.keys()):  # need to copy keys here because we mutate in loop
-                #    self.__patch_instance_norm_state_dict(state_dict, net, key.split('.'))
-                net.load_state_dict(state_dict)
-                
-    def print_networks(self):
-        """Print the total number of parameters in the network and (if verbose) network architecture
-        """
-        print('---------- Networks initialized -------------')
-        for name in self.model_names:
-            if isinstance(name, str):
-                net = getattr(self, 'net' + name)
-                num_params = 0
-                for param in net.parameters():
-                    num_params += param.numel()
-                print(net)
-                print('[Network %s] Total number of parameters : %.3f M' % (name, num_params / 1e6))
-        print('-----------------------------------------------')
-    
-    def setup(self, opt):
-        """Load and print networks; create schedulers
-
-        Parameters:
-            opt (Option class) -- stores all the experiment flags; needs to be a subclass of BaseOptions
-        """
-        if self.opt.isTrain:
-            self.schedulers = [get_scheduler(optimizer, opt) for optimizer in self.optimizers]
-        if not self.opt.isTrain or opt.continue_train:
-            load_suffix = opt.epoch
-            self.load_networks(load_suffix)
-
-        self.print_networks()
-        
-    def get_current_losses(self):
-        """Return traning losses / errors. train.py will print out these errors on console, and save them to a file"""
-        errors_ret = OrderedDict()
-        for name in self.loss_names:
-            if isinstance(name, str):
-                errors_ret[name] = float(getattr(self, 'loss_' + name))  # float(...) works for both scalar tensor and float number
-        return errors_ret
-    
-    def update_learning_rate(self):
-        """Update learning rates for all the networks; called at the end of every epoch"""
-        for scheduler in self.schedulers:
-            if self.opt.lr_policy == 'plateau':
-                scheduler.step(self.metric)
-            else:
-                scheduler.step()
-
-        lr = self.optimizers[0].param_groups[0]['lr']
-        print('learning rate = %.7f' % lr)
-    
-    def parallelize(self):
-        for name in self.model_names:
-            if isinstance(name, str):
-                net = getattr(self, 'net' + name)
-                setattr(self, 'net' + name, torch.nn.DataParallel(net, device_ids=[0]))
-        
-    # For TESTING
-    def eval(self):
-        """Make models eval mode during test time"""
-        for name in self.model_names:
-            if isinstance(name, str):
-                net = getattr(self, 'net' + name)
-                net.eval()
-
-    def test(self):
-        """Forward function used in test time.
-
-        This function wraps <forward> function in no_grad() so we don't save intermediate steps for backprop
-        """
-        with torch.no_grad():
-            self.forward()
