@@ -9,6 +9,7 @@ def ArgParse():
     # Parse command line arguments
     parser = argparse.ArgumentParser(description='For model training')
     # basic parameters
+    parser.add_argument('--model', type=str, default='cut', help='chooses which model to use.', choices=['cut_seg', 'cyclegan'])
     parser.add_argument('--train_src_dir', help='Train-source dataset folder', type=str, default='datasets/datasets_paired/train/pairedA')
     parser.add_argument('--train_tar_dir', help='Train-target dataset folder', type=str, default='datasets/datasets_paired/train/pairedB')
     parser.add_argument('--test_src_dir', help='Test-source dataset folder', type=str, default='datasets/datasets_paired/test/pairedA')
@@ -17,13 +18,14 @@ def ArgParse():
     parser.add_argument('--easy_label', type=str, default='demo_v4', help='Interpretable name')
     parser.add_argument('--checkpoints_dir', type=str, default='./checkpoints', help='models are saved here')
     parser.add_argument('--load', help='if to load the network', action='store_true')
+    parser.add_argument('--load_path', help='where to load the network')
+    parser.add_argument('--load_seg_path', help='where to load seg', default='/home/vw/Data/ImperialCollege/CUT_Seg/Victor_CUT_Seg/checkpoints_HPC/demo_v8')
+    parser.add_argument('--load_seg_epoch', help='which checkpoint to load', type=int, default=495)
     parser.add_argument('--load_epoch', help='which checkpoint to load', type=int, default=5)
     # the output dir is set for demo
     parser.add_argument('--out_dir', help='Outputs folder', type=str, default='./output/victor_demo_v4')
     
-    # model parameters for CUT
     """GAN parameters"""
-    parser.add_argument('--CUT_mode', type=str, default="CUT", choices=['CUT', 'cut', 'FastCUT', 'fastcut'], help='')
     parser.add_argument('--input_nc', type=int, default=3, help='# of input image channels: 3 for RGB and 1 for grayscale')
     parser.add_argument('--output_nc', type=int, default=3, help='# of output image channels: 3 for RGB and 1 for grayscale')
     parser.add_argument('--ngf', type=int, default=64, help='# of gen filters in the last conv layer')
@@ -39,36 +41,16 @@ def ArgParse():
                         help='no dropout for the generator')
     parser.add_argument('--antialias', action='store_true', help='if specified, use antialiased-downsampling')
     parser.add_argument('--antialias_up', action='store_true', help='if specified, use [upconv(learned filter)]')
-    parser.add_argument('--lambda_GAN', type=float, default=1.0, help='weight for GAN loss：GAN(G(X))')
-    """netF paramters"""
-    parser.add_argument('--lambda_NCE', type=float, default=1.0, help='weight for NCE loss: NCE(G(X), X)')
-    parser.add_argument('--nce_idt', type=util.str2bool, nargs='?', const=True, default=True, help='use NCE loss for identity mapping: NCE(G(Y), Y))')
-    parser.add_argument('--nce_layers', type=str, default='0,3,5,7,11', help='compute NCE loss on which layers')
-    parser.add_argument('--netF', type=str, default='mlp_sample', choices=['sample', 'reshape', 'mlp_sample'], help='how to downsample the feature map')
-    parser.add_argument('--netF_nc', type=int, default=256)
-    parser.add_argument('--nce_T', type=float, default=0.07, help='temperature for NCE loss')
-    parser.add_argument('--num_patches', type=int, default=256, help='number of patches per layer')
+    
     """netS parameters"""
+    parser.add_argument('--netS_lambda', type=int, default=10, help='lambda for SEG loss')
+    parser.add_argument('--netS_Loss', type=str, help='semantic segmentation loss function', choices=['dice', 'bce', 'DICE', 'BCE'], default='bce')
     parser.add_argument('--netS', type=str, default='resnet', choices=['resnet', 'unet_256', 'smp'], help='how to segment the input image')
     parser.add_argument('--smp_arch', type=str, default='Unet', help='the segmentor architectur')
     parser.add_argument('--smp_encoder', type=str, default='efficientnet-b3', help='the encoder name')
     parser.add_argument('--normS', type=str, default='instance', choices=['instance', 'batch', 'none'], help='instance normalization or batch normalization for S')
     parser.add_argument('--num_class', type=int, default=2, help='# of output image channels for segmented mask')
-    parser.add_argument('--netS_lambda', type=int, default=10, help='lambda for SEG loss')
-    parser.add_argument('--netS_Loss', type=str, help='semantic segmentation loss function', choices=['dice', 'bce', 'DICE', 'BCE'], default='bce')
 
-    parser.add_argument('--flip_equivariance',
-                        type=bool, nargs='?', default=False,
-                        help="Enforce flip-equivariance as additional regularization. It's used by FastCUT, but not CUT")
-
-    # model parameters for CycleGAN
-    parser.add_argument('--CycleGAN', type=util.str2bool, default=False, help='if to use CycleGAN')
-    parser.add_argument('--lambda_A', type=float, default=10.0, help='weight for cycle loss (A -> B -> A)')
-    parser.add_argument('--lambda_B', type=float, default=10.0, help='weight for cycle loss (B -> A -> B)')
-    parser.add_argument('--lambda_identity', type=float, default=0.5, help='use identity mapping. Setting lambda_identity other than 0 has an effect of scaling the weight of the identity mapping loss.\
-                        For example, if the weight of the identity loss should be 10 times smaller than the weight of the reconstruction loss, please set lambda_identity = 0.1')
-    parser.add_argument('--pool_size', type=int, default=100, help='the size of image pool')
-    
     # training parameters
     parser.add_argument('--n_epochs', type=int, default=200, help='number of epochs with the initial learning rate')
     parser.add_argument('--n_epochs_decay', type=int, default=200, help='number of epochs to linearly decay learning rate to zero')
@@ -83,12 +65,33 @@ def ArgParse():
     parser.add_argument('--save_epoch_freq', type=int, default=5, help='frequency of saving checkpoints at the end of epochs')
     parser.add_argument('--evaluation_freq', type=int, default=5000, help='evaluation freq')
     parser.add_argument('--save_by_iter', action='store_true', help='whether saves model by iteration')
-    parser.add_argument('--continue_train', action='store_true', help='continue training: load the latest model')
     parser.add_argument('--epoch_count', type=int, default=1, help='the starting epoch count, we save the model by <epoch_count>, <epoch_count>+<save_latest_freq>, ...')
     parser.add_argument('--phase', type=str, default='train', help='train, val, test, etc')
     parser.add_argument('--pretrained_name', type=str, default=None, help='resume training from another checkpoint')
-    
-    
+
+    """cyclegan parameters"""
+    parser.add_argument('--lambda_A', type=float, default=10.0, help='weight for cycle loss (A -> B -> A)')
+    parser.add_argument('--lambda_B', type=float, default=10.0, help='weight for cycle loss (B -> A -> B)')
+    parser.add_argument('--lambda_identity', type=float, default=0.5, help='use identity mapping. Setting lambda_identity other than 0 has an effect of scaling the weight of the identity mapping loss.\
+                        For example, if the weight of the identity loss should be 10 times smaller than the weight of the reconstruction loss, please set lambda_identity = 0.1')
+    parser.add_argument('--pool_size', type=int, default=100, help='the size of image pool')
+
+    """cut parameters"""
+    parser.add_argument('--CUT_mode', type=str, default="CUT", choices=['CUT', 'cut', 'FastCUT', 'fastcut'], help='')
+    parser.add_argument('--lambda_GAN', type=float, default=1.0, help='weight for GAN loss：GAN(G(X))')
+    """netF paramters"""
+    parser.add_argument('--lambda_NCE', type=float, default=1.0, help='weight for NCE loss: NCE(G(X), X)')
+    parser.add_argument('--nce_idt', type=util.str2bool, nargs='?', const=True, default=True, help='use NCE loss for identity mapping: NCE(G(Y), Y))')
+    parser.add_argument('--nce_layers', type=str, default='0,3,5,7,11', help='compute NCE loss on which layers')
+    parser.add_argument('--netF', type=str, default='mlp_sample', choices=['sample', 'reshape', 'mlp_sample'], help='how to downsample the feature map')
+    parser.add_argument('--netF_nc', type=int, default=256)
+    parser.add_argument('--nce_T', type=float, default=0.07, help='temperature for NCE loss')
+    parser.add_argument('--num_patches', type=int, default=256, help='number of patches per layer')
+    parser.add_argument('--flip_equivariance',
+                    type=bool, nargs='?', default=False,
+                    help="Enforce flip-equivariance as additional regularization. It's used by FastCUT, but not CUT")
+    parser.set_defaults(pool_size=0)  # no image pooling
+
     opt, _ = parser.parse_known_args()
 
     # Set default parameters for CUT and FastCUT

@@ -1,13 +1,5 @@
-"""
-v8 uses smp segmentor and dice score to train the whole network
-v7 uses the smp segmentor, the loss function is normal BCE, the whole network is trained at the same time.
-v5 trains the resnet segmentor first for 50 epochs, then train the whole composite network
-v4 trains the unet segmentor first, then the whole composite network
-"""
 from options.train_options import ArgParse
 from models.segmentor import Segmentor
-from models.cut_seg import CUT_SEG_model
-from models.cycleGAN import CycleGAN
 from utils.create_dataset import EczemaDataset
 import torch
 from torch.utils.data import DataLoader
@@ -16,15 +8,13 @@ import matplotlib.pyplot as plt
 import random
 import numpy as np
 from torch.nn.functional import softmax
-from torch.autograd import Variable
 from utils import util
 import pickle
 import os
 
 
-def on_epoch_end(generator, segmenter, source_dataset, target_dataset, save_dir, epoch, num_img=2):
-    
-    titles = ['Source', "Translated", "Target", "Identity"]
+def on_epoch_end(segmenter, source_dataset, target_dataset, save_dir, epoch, num_img=2):
+    titles = ['Source', 'Source mask', 'Pr source masked out', "Target", "Target mask", 'Pr target masked out']
     _, ax = plt.subplots(num_img, len(titles), figsize=(20, 10))
     if ax.ndim == 1:
         [ax[i].set_title(title) for i, title in enumerate(titles)]
@@ -62,25 +52,34 @@ def on_epoch_end(generator, segmenter, source_dataset, target_dataset, save_dir,
         real_img = util.tensor2img(src_real)
         source_img = (real_img * 127.5 + 127.5).astype(np.uint8)
 
-        # generate the translated img
-        translated = generator(src_real)
-        translated = util.tensor2img(translated)
-        translated = (translated * 127.5 + 127.5).astype(np.uint8)
+        # original mask
+        ori_mask = util.tensor2img(src_input, isMask=True)
+        
+        # generate the predicted mask for the src img
+        pr_src_mask = segmenter(src_real.unsqueeze(0))
+        pr_src_mask = softmax(pr_src_mask, dim=-1)
+        pr_src_mask = util.tensor2img(pr_src_mask)
+        pr_src_mask = np.argmax(pr_src_mask,axis=-1)
+        
 
         # target img
         target = util.tensor2img(tar_real)
-        target = (target * 127.5 + 127.5).astype(np.uint8)
-        
-        # generate identity image
-        idt = generator(tar_real)
-        idt = util.tensor2img(idt)
-        idt = (idt * 127.5 + 127.5).astype(np.uint8)
+        target_img = (target * 127.5 + 127.5).astype(np.uint8)
+
+        # target mask
+        tar_mask = util.tensor2img(tar_input ,isMask=True)
+
+        # generate the predicted mask for the src img
+        pr_tar_mask = segmenter(tar_real.unsqueeze(0))
+        pr_tar_mask = softmax(pr_tar_mask, dim=-1)
+        pr_tar_mask = util.tensor2img(pr_tar_mask)
+        pr_tar_mask = np.argmax(pr_tar_mask,axis=-1)
         
         if ax.ndim == 1:
-            [ax[j].imshow(img) for j, img in enumerate([source_img, translated, target, idt])]
+            [ax[j].imshow(img) for j, img in enumerate([source_img, ori_mask, pr_src_mask, target_img, tar_mask, pr_tar_mask])]
             [ax[j].axis("off") for j in range(len(titles))]
         elif ax.ndim > 1:
-            [ax[i, j].imshow(img) for j, img in enumerate([source_img, translated, target, idt])]
+            [ax[i, j].imshow(img) for j, img in enumerate([source_img, ori_mask, pr_src_mask, target_img, tar_mask, pr_tar_mask])]
             [ax[i, j].axis("off") for j in range(len(titles))]
     
     save_dir = os.path.join(save_dir, 'img')
@@ -106,19 +105,15 @@ if __name__ == '__main__':
     src_dataloader = DataLoader(train_src, batch_size=BATCH_SIZE, drop_last=DROP_LAST, shuffle=SHUFFLE)
     tar_dataloader = DataLoader(train_tar, batch_size=BATCH_SIZE, drop_last=DROP_LAST, shuffle=SHUFFLE)
     
-    # create gan model
-    if opt.model == 'cyclegan':
-        model = CycleGAN(opt)
-    elif opt.model == 'cut_seg':
-        model = CUT_SEG_model(opt)
-
-
+    # create the model
+    model = Segmentor(opt)
     loss_hist = []
 
     if opt.load:
         model.load_networks(opt.load_epoch)
         start_epoch = opt.load_epoch
     else: start_epoch = opt.epoch_count
+    print(f'load successfully')
     
     # start training
     for epoch in range(start_epoch, opt.n_epochs + opt.n_epochs_decay + 1): # outer loop for different epochs; we save the model by <epoch_count>
@@ -152,10 +147,7 @@ if __name__ == '__main__':
 
         # generate and save images after each epoch end
         print(f'save generated images')
-        if opt.CycleGAN:
-            on_epoch_end(model.netG_A, model.netS_A, test_src, test_tar, opt.out_dir, epoch, num_img=1)
-        else:
-            on_epoch_end(model.netG, model.netS, test_src, test_tar, opt.out_dir, epoch, num_img=1)
+        on_epoch_end(model.netS, test_src, test_tar, opt.out_dir, epoch, num_img=2)
         print(f'images are generated successfully')
 
         print('End of epoch %d / %d \t Time Taken: %d sec' % (epoch, opt.n_epochs + opt.n_epochs_decay, time.time() - epoch_start_time))
