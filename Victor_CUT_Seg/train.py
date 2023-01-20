@@ -8,6 +8,8 @@ from options.train_options import ArgParse
 from models.segmentor import Segmentor
 from models.cut_seg import CUT_SEG_model
 from models.cycleGAN import CycleGAN
+from models.dcl_model import DCLModel
+from models.distance_model import DistanceGAN
 from utils.create_dataset import EczemaDataset
 import torch
 from torch.utils.data import DataLoader
@@ -22,7 +24,7 @@ import pickle
 import os
 
 
-def on_epoch_end(generator, segmenter, source_dataset, target_dataset, save_dir, epoch, num_img=2):
+def on_epoch_end(generator, source_dataset, target_dataset, save_dir, epoch, num_img=2):
     
     titles = ['Source', "Translated", "Target", "Identity"]
     _, ax = plt.subplots(num_img, len(titles), figsize=(20, 10))
@@ -100,7 +102,7 @@ if __name__ == '__main__':
     test_tar = EczemaDataset(opt.test_tar_dir)
     
     # create the dataloaders
-    BATCH_SIZE = 1
+    BATCH_SIZE = opt.batchSize
     DROP_LAST = True
     SHUFFLE = True
     src_dataloader = DataLoader(train_src, batch_size=BATCH_SIZE, drop_last=DROP_LAST, shuffle=SHUFFLE)
@@ -111,7 +113,10 @@ if __name__ == '__main__':
         model = CycleGAN(opt)
     elif opt.model == 'cut_seg':
         model = CUT_SEG_model(opt)
-
+    elif opt.model == 'dcl':
+        model = DCLModel(opt)
+    elif opt.model == 'distance':
+        model = DistanceGAN(opt, src_dataloader, tar_dataloader)
 
     loss_hist = []
 
@@ -144,19 +149,19 @@ if __name__ == '__main__':
             model.save_networks(epoch)
             print(f'model saved successfully')
         
-        """save the training loss and the generate images after each epoch"""
-        print('saving the loss at the end of epoch %d' % (epoch))
-        loss_hist.append(model.get_current_losses())
-        pickle.dump(loss_hist, open(os.path.join(opt.out_dir, 'loss', 'loss_'+str(epoch)), 'wb'))
-        print(f'training loss is saved successfully')
+            """save the training loss and the generate images after each epoch"""
+            print('saving the loss at the end of epoch %d' % (epoch))
+            loss_hist.append(model.get_current_losses())
+            pickle.dump(loss_hist, open(os.path.join('./output', opt.out_dir, 'loss', 'loss_'+str(epoch)), 'wb'))
+            print(f'training loss is saved successfully')
 
-        # generate and save images after each epoch end
-        print(f'save generated images')
-        if opt.model == 'cyclegan':
-            on_epoch_end(model.netG_A, model.netS_A, test_src, test_tar, opt.out_dir, epoch, num_img=2)
-        elif opt.model == 'cut_seg':
-            on_epoch_end(model.netG, model.netS, test_src, test_tar, opt.out_dir, epoch, num_img=2)
-        print(f'images are generated successfully')
+            # generate and save images after each epoch end
+            print(f'save generated images')
+            if opt.model == 'cyclegan' or opt.model == 'dcl' or opt.model == 'distance':
+                on_epoch_end(model.netG_A, test_src, test_tar, os.path.join('./output', opt.out_dir), epoch, num_img=2)
+            elif opt.model == 'cut_seg':
+                on_epoch_end(model.netG, test_src, test_tar, os.path.join('./output', opt.out_dir), epoch, num_img=2)
+            print(f'images are generated successfully')
 
         print('End of epoch %d / %d \t Time Taken: %d sec' % (epoch, opt.n_epochs + opt.n_epochs_decay, time.time() - epoch_start_time))
         model.update_learning_rate()                     # update learning rates at the end of every epoch.

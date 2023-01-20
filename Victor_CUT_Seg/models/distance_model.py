@@ -1,6 +1,7 @@
 import torch
 import torch.nn as nn
 import itertools
+import numpy as np
 
 from .networks import define_G, define_D
 from .base_model import BaseModel
@@ -9,17 +10,16 @@ from utils.imagepool import ImagePool
 from utils import util
 
 
-class CycleGAN(BaseModel):
-    def __init__(self, opt):
+class DistanceGAN(BaseModel):
+    def __init__(self, opt, src_dataloader, tar_dataloader):
         BaseModel.__init__(self, opt)
         self.opt = opt
-        self.loss_names = ['D_A', 'G_A', 'cycle_A', 'idt_A', 'D_B', 'G_B', 'cycle_B', 'idt_B']
+        self.loss_names = ['D_A', 'G_A', 'distance_A', 'D_B', 'G_B', 'distance_B']
 
         if self.opt.isTrain:
             self.model_names = ['G_A', 'G_B', 'D_A', 'D_B']
         else:  # during test time, only load Gs
             self.model_names = ['G_A', 'G_B']
-
         
         self.netG_A = define_G(opt.input_nc, opt.output_nc, opt.ngf, opt.netG, opt.normG, not opt.no_dropout, opt.init_type, opt.init_gain, opt.antialias, opt.antialias_up, opt)
         self.netG_B = define_G(opt.input_nc, opt.output_nc, opt.ngf, opt.netG, opt.normG, not opt.no_dropout, opt.init_type, opt.init_gain, opt.antialias, opt.antialias_up, opt)
@@ -47,11 +47,9 @@ class CycleGAN(BaseModel):
             # initialize optimizers; schedulers will be automatically created by function <BaseModel.setup>.
             self.optimizer_G = torch.optim.Adam(itertools.chain(self.netG_A.parameters(), self.netG_B.parameters()), lr=opt.lr, betas=(opt.beta1, 0.999))
             self.optimizer_D = torch.optim.Adam(itertools.chain(self.netD_A.parameters(), self.netD_B.parameters()), lr=opt.lr, betas=(opt.beta1, 0.999))
-            # self.optimizer_S = torch.optim.Adam(itertools.chain(self.netS_A.parameters(), self.netS_B.parameters()), lr=opt.lr, betas=(opt.beta1, 0.999))
             self.optimizers.append(self.optimizer_G)
             self.optimizers.append(self.optimizer_D)
-            # self.optimizers.append(self.optimizer_S)
-        
+            
     def set_input(self, input):
         """Unpack input data from the dataloader and perform necessary pre-processing steps.
         Parameters:
@@ -66,8 +64,7 @@ class CycleGAN(BaseModel):
         self.real_A = self.real_A.to(self.device)
         self.mask_B = self.mask_B.to(self.device)
         self.real_B = self.real_B.to(self.device)
-
-
+        
     def mask_realImage(self):
         """mask out real image using the ground truth mask
         """
@@ -78,7 +75,8 @@ class CycleGAN(BaseModel):
         masked_real_A_img = util.mask_image(mask_A_img, real_A_img)
         masked_real_B_img = util.mask_image(mask_B_img, real_B_img)
         self.masked_real_A = util.img2tensor(masked_real_A_img).to(self.device)
-        self.masked_real_B = util.img2tensor(masked_real_B_img).to(self.device) 
+        self.masked_real_B = util.img2tensor(masked_real_B_img).to(self.device)
+        self.set_expectation_and_std(self.masked_real_A, self.masked_real_B)
 
     def forward(self):
         """Run forward pass; called by both functions <optimize_parameters> and <test>."""
@@ -96,7 +94,7 @@ class CycleGAN(BaseModel):
 
             self.fake_A = self.netG_B(self.real_B)
             self.rec_B = self.netG_A(self.fake_A)
-
+    
     def backward_D_basic(self, netD, real, fake):
         """Calculate GAN loss for the discriminator
         Parameters:
@@ -164,13 +162,20 @@ class CycleGAN(BaseModel):
         self.loss_cycle_A = self.criterionCycle(self.rec_A, self.real_A) * lambda_A
         # Backward cycle loss || G_A(G_B(B)) - B||
         self.loss_cycle_B = self.criterionCycle(self.rec_B, self.real_B) * lambda_B
+        # self distance
+        self.loss_distance_A, self.loss_distance_B = self.get_self_distances()
+        
+        # weighted
+        self.loss_distance_A *= self.opt.lambda_distance_A
+        self.loss_distance_B *= self.opt.lambda_distance_B
         # combined loss and calculate gradients
-        self.loss_G = self.loss_G_A + self.loss_G_B + self.loss_cycle_A + self.loss_cycle_B + self.loss_idt_A + self.loss_idt_B + loss_fake_SEG_A + loss_fake_SEG_B
+        self.loss_G = self.loss_G_A + self.loss_G_B + self.loss_cycle_A + self.loss_cycle_B + self.loss_idt_A + self.loss_idt_B + loss_fake_SEG_A + loss_fake_SEG_B +\
+            self.loss_distance_A + self.loss_distance_B
         self.loss_G.backward()
     
     def data_dependent_initialize(self, data):
         return
-
+    
     def optimize_parameters(self):
         """Calculate losses, gradients, and update network weights; called in every training iteration"""
         # forward
@@ -188,4 +193,40 @@ class CycleGAN(BaseModel):
         self.optimizer_G.zero_grad()  # set G_A and G_B's gradients to zero
         self.backward_G()             # calculate gradients for G_A and G_B
         self.optimizer_G.step()       # update G_A and G_B's weights
+    
+    """Auxilary function"""
+    def distance(self, A, B):
+        return torch.mean(torch.abs(A - B))
+    
+    def get_individual_distance_loss(self, A_i, A_j, AB_i, AB_j,
+                                     B_i, B_j, BA_i, BA_j):
+        distance_in_A = self.distance(A_i, A_j)
+        distance_in_AB = self.distance(AB_i, AB_j)
+        distance_in_B = self.distance(B_i, B_j)
+        distance_in_BA = self.distance(BA_i, BA_j)
+        distance_in_A = (distance_in_A - self.expectation_A) / self.std_A
+        distance_in_AB = (distance_in_AB - self.expectation_B) / self.std_B
+        distance_in_B = (distance_in_B - self.expectation_B) / self.std_B
+        distance_in_BA = (distance_in_BA - self.expectation_A) / self.std_A
         
+        return torch.abs(distance_in_A - distance_in_AB), torch.abs(distance_in_B - distance_in_BA)
+    
+    def get_self_distances(self):
+        A_half_1, A_half_2 = torch.chunk(self.real_A, 2, dim=2)
+        B_half_1, B_half_2 = torch.chunk(self.real_B, 2, dim=2)
+        AB_half_1, AB_half_2 = torch.chunk(self.fake_B, 2, dim=2)
+        BA_half_1, BA_half_2 = torch.chunk(self.fake_A, 2, dim=2)
+
+        l_distance_A, l_distance_B = \
+            self.get_individual_distance_loss(A_half_1, A_half_2,
+                                              AB_half_1, AB_half_2,
+                                              B_half_1, B_half_2,
+                                              BA_half_1, BA_half_2)
+
+        return l_distance_A, l_distance_B
+
+    def set_expectation_and_std(self, A, B):
+        self.expectation_A = torch.mean(A)
+        self.expectation_B = torch.mean(B)
+        self.std_A = torch.std(A)
+        self.std_B = torch.std(B)

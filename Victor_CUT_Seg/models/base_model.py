@@ -39,6 +39,9 @@ class BaseModel(ABC):
         self.model_names = []
         self.optimizers = []
         self.metric = 0  # used for learning rate policy 'plateau'
+        # define the segmentor, S
+        self.netS = networks.define_S(opt.input_nc, opt.num_class, opt.ngf, opt.netS, opt.normS, not opt.no_dropout, opt.init_type, opt.init_gain, opt.antialias, opt.antialias_up, opt)
+        self.load_netS(path=opt.load_seg_path, epoch=opt.load_seg_epoch)
 
     @staticmethod
     def dict_grad_hook_factory(add_func=lambda x: x):
@@ -193,3 +196,21 @@ class BaseModel(ABC):
             if net is not None:
                 for param in net.parameters():
                     param.requires_grad = requires_grad
+                    
+    def load_netS(self, path, epoch):
+        """Load all the networks from the disk.
+
+        Parameters:
+            epoch (int) -- current epoch; used in the file name '%s_net_%s.pth' % (epoch, name)
+        """
+        load_filename = '%s_net_%s.pth' % (epoch, 'S')
+        load_path = os.path.join(path, load_filename)
+        netS = getattr(self, 'netS')
+        if isinstance(netS, torch.nn.DataParallel):
+            netS = netS.module
+        state_dict = torch.load(load_path, map_location=str(self.device))
+        if hasattr(state_dict, '_metadata'):
+            del state_dict._metadata
+        netS.load_state_dict(state_dict)
+        
+        self.netS = netS

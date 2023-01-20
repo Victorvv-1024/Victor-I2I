@@ -210,9 +210,29 @@ class ResnetGenerator(nn.Module):
         self.model = nn.Sequential(*model)
 
     def forward(self, input, layers=[], encode_only=False):
-        """Standard forward"""
-        fake = self.model(input)
-        return fake
+        if -1 in layers:
+            layers.append(len(self.model))
+        if len(layers) > 0:
+            feat = input
+            feats = []
+            for layer_id, layer in enumerate(self.model):
+                # print(layer_id, layer)
+                feat = layer(feat)
+                if layer_id in layers:
+                    # print("%d: adding the output of %s %d" % (layer_id, layer.__class__.__name__, feat.size(1)))
+                    feats.append(feat)
+                else:
+                    # print("%d: skipping %s %d" % (layer_id, layer.__class__.__name__, feat.size(1)))
+                    pass
+                if layer_id == layers[-1] and encode_only:
+                    # print('encoder only return features')
+                    return feats  # return intermediate features alone; stop in the last layers
+
+            return feat, feats  # return both output and intermediate features
+        else:
+            """Standard forward"""
+            fake = self.model(input)
+            return fake
 
 class Discriminator(nn.Module):
     """Defines a PatchGAN discriminator"""
@@ -364,7 +384,8 @@ class PatchSampleF(nn.Module):
 
     def create_mlp(self, feats):
         for mlp_id, feat in enumerate(feats):
-            feat = feat.unsqueeze(0)
+            # feat = feat.unsqueeze(0)
+            # print(feat.shape)
             input_nc = feat.shape[1]
             mlp = nn.Sequential(*[nn.Linear(input_nc, self.nc), nn.ReLU(), nn.Linear(self.nc, self.nc)])
             if torch.cuda.is_available():
@@ -379,9 +400,11 @@ class PatchSampleF(nn.Module):
         if self.use_mlp and not self.mlp_init:
             self.create_mlp(feats)
         for feat_id, feat in enumerate(feats):
-            feat = feat.unsqueeze(0)
+            # feat = feat.unsqueeze(0)
+            # print(feat.shape)
             B, H, W = feat.shape[0], feat.shape[2], feat.shape[3]
             feat_reshape = feat.permute(0, 2, 3, 1).flatten(1, 2)
+            # print(feat_reshape.shape)
             if num_patches > 0:
                 if patch_ids is not None:
                     patch_id = patch_ids[feat_id] # select postives
@@ -389,7 +412,8 @@ class PatchSampleF(nn.Module):
                     patch_id = np.random.permutation(feat_reshape.shape[1])
                     patch_id = patch_id[:int(min(num_patches, patch_id.shape[0]))]  # .to(patch_ids.device)
                 patch_id = torch.tensor(patch_id, dtype=torch.long, device=feat.device)
-                x_sample = feat_reshape[:, patch_id, :].flatten(0, 1)  # reshape(-1, x.shape[1])
+                x_sample = feat_reshape[:, patch_id, :].flatten(0, 1)
+
             else:
                 x_sample = feat_reshape
                 patch_id = []
@@ -515,9 +539,6 @@ class SMPmodel(nn.Module):
         params = smp.encoders.get_preprocessing_params(encoder_name=encoder_name)
         self.register_buffer("std", torch.tensor(params["std"]).view(1, 3, 1, 1))
         self.register_buffer("mean", torch.tensor(params["mean"]).view(1, 3, 1, 1))
-
-        # for image segmentation dice loss could be the best first choice
-        self.loss_fn = smp.losses.DiceLoss(smp.losses.BINARY_MODE, from_logits=True)
 
     def forward(self, image):
         # normalize image here

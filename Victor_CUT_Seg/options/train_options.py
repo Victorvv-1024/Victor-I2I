@@ -9,21 +9,22 @@ def ArgParse():
     # Parse command line arguments
     parser = argparse.ArgumentParser(description='For model training')
     # basic parameters
-    parser.add_argument('--model', type=str, default='cut', help='chooses which model to use.', choices=['cut_seg', 'cyclegan'])
+    parser.add_argument('--model', type=str, default='cut_seg', help='chooses which model to use.', choices=['cut_seg', 'cyclegan', 'dcl', 'distance'])
     parser.add_argument('--train_src_dir', help='Train-source dataset folder', type=str, default='datasets/datasets_paired/train/pairedA')
     parser.add_argument('--train_tar_dir', help='Train-target dataset folder', type=str, default='datasets/datasets_paired/train/pairedB')
     parser.add_argument('--test_src_dir', help='Test-source dataset folder', type=str, default='datasets/datasets_paired/test/pairedA')
     parser.add_argument('--test_tar_dir', help='Test-target dataset folder', type=str, default='datasets/datasets_paired/test/pairedB')
+    parser.add_argument('--batchSize', type=int, default=1, help='input batch size')
     parser.add_argument('--name', type=str, default='demo_v4', help='name of the experiment. It decides where to store samples and models')
     parser.add_argument('--easy_label', type=str, default='demo_v4', help='Interpretable name')
     parser.add_argument('--checkpoints_dir', type=str, default='./checkpoints', help='models are saved here')
     parser.add_argument('--load', help='if to load the network', action='store_true')
     parser.add_argument('--load_path', help='where to load the network')
-    parser.add_argument('--load_seg_path', help='where to load seg', default='/home/vw/Data/ImperialCollege/CUT_Seg/Victor_CUT_Seg/checkpoints_HPC/demo_v8')
+    parser.add_argument('--load_seg_path', help='where to load seg')
     parser.add_argument('--load_seg_epoch', help='which checkpoint to load', type=int, default=495)
     parser.add_argument('--load_epoch', help='which checkpoint to load', type=int, default=5)
     # the output dir is set for demo
-    parser.add_argument('--out_dir', help='Outputs folder', type=str, default='./output/victor_demo_v4')
+    parser.add_argument('--out_dir', help='Outputs folder', type=str)
     
     """GAN parameters"""
     parser.add_argument('--input_nc', type=int, default=3, help='# of input image channels: 3 for RGB and 1 for grayscale')
@@ -79,6 +80,8 @@ def ArgParse():
     """cut parameters"""
     parser.add_argument('--CUT_mode', type=str, default="CUT", choices=['CUT', 'cut', 'FastCUT', 'fastcut'], help='')
     parser.add_argument('--lambda_GAN', type=float, default=1.0, help='weight for GAN loss：GAN(G(X))')
+    
+    
     """netF paramters"""
     parser.add_argument('--lambda_NCE', type=float, default=1.0, help='weight for NCE loss: NCE(G(X), X)')
     parser.add_argument('--nce_idt', type=util.str2bool, nargs='?', const=True, default=True, help='use NCE loss for identity mapping: NCE(G(Y), Y))')
@@ -90,18 +93,42 @@ def ArgParse():
     parser.add_argument('--flip_equivariance',
                     type=bool, nargs='?', default=False,
                     help="Enforce flip-equivariance as additional regularization. It's used by FastCUT, but not CUT")
-    parser.set_defaults(pool_size=0)  # no image pooling
-
+    
+    """dcl paramters"""
+    parser.add_argument('--DCL_mode', type=str, default="DCL", choices='DCL')
+    
+    """distance parameters"""
+    parser.add_argument('--lambda_distance_A', type=float, default=1.0, help='weight for distance loss (A -> B)')
+    parser.add_argument('--lambda_distance_B', type=float, default=1.0, help='weight for distance loss (B -> A)')
+    
     opt, _ = parser.parse_known_args()
 
     # Set default parameters for CUT and FastCUT
-    if opt.CUT_mode.lower() == "cut":
+    if opt.CUT_mode.lower() == "cut" and opt.model.lower() == 'cut_seg':
         parser.set_defaults(nce_idt=True, lambda_NCE=1.0)
-    elif opt.CUT_mode.lower() == "fastcut":
+        parser.set_defaults(pool_size=0)  # no image pooling
+
+    elif opt.CUT_mode.lower() == "fastcut" and opt.model.lower() == 'cut_seg':
         parser.set_defaults(
             nce_idt=False, lambda_NCE=10.0, flip_equivariance=True,
             n_epochs=150, n_epochs_decay=50
         )
+        parser.set_defaults(pool_size=0)  # no image pooling
+
+    elif opt.model.lower() == 'cyclegan':
+        parser.set_defaults(
+            lambda_identity=0.5, pool_size = 100
+        )
+    elif opt.model.lower() == 'dcl' and opt.DCL_mode.lower() == 'dcl':
+         parser.set_defaults(
+            nce_idt=True, lambda_identity=1.0, 
+            lambda_NCE = 2.0, nce_layers = '4,8,12,16'
+        )
+         parser.set_defaults(pool_size=0)  # no image pooling
+    elif opt.model.lower() == 'distance':
+        parser.set_defaults(
+            lambda_identity=0.5, pool_size = 100, batchSize=2
+        )     
     else:
         raise ValueError(opt.CUT_mode)
 
