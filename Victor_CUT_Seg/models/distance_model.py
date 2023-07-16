@@ -3,7 +3,7 @@ import torch.nn as nn
 import itertools
 import numpy as np
 
-from .networks import define_G, define_D
+from .networks import define_G, define_D, define_S
 from .base_model import BaseModel
 from .losses import GANLoss, SEGLoss, DiceLoss
 from utils.imagepool import ImagePool
@@ -11,10 +11,10 @@ from utils import util
 
 
 class DistanceGAN(BaseModel):
-    def __init__(self, opt, src_dataloader, tar_dataloader):
+    def __init__(self, opt):
         BaseModel.__init__(self, opt)
         self.opt = opt
-        self.loss_names = ['D_A', 'G_A', 'distance_A', 'D_B', 'G_B', 'distance_B']
+        self.loss_names = ['D_A', 'G_A', 'distance_A', 'D_B', 'G_B', 'distance_B', 'S']
 
         if self.opt.isTrain:
             self.model_names = ['G_A', 'G_B', 'D_A', 'D_B']
@@ -23,10 +23,12 @@ class DistanceGAN(BaseModel):
         
         self.netG_A = define_G(opt.input_nc, opt.output_nc, opt.ngf, opt.netG, opt.normG, not opt.no_dropout, opt.init_type, opt.init_gain, opt.antialias, opt.antialias_up, opt)
         self.netG_B = define_G(opt.input_nc, opt.output_nc, opt.ngf, opt.netG, opt.normG, not opt.no_dropout, opt.init_type, opt.init_gain, opt.antialias, opt.antialias_up, opt)
+        self.netS = define_S(opt.input_nc, opt.num_class, opt.ngf, opt.netS, opt.normS, not opt.no_dropout, opt.init_type, opt.init_gain, opt.antialias, opt.antialias_up, opt)
 
         if self.opt.isTrain:  # define discriminators
             self.netD_A = define_D(opt.output_nc, opt.ndf, opt.netD, opt.n_layers_D, opt.normD, opt.init_type, opt.init_gain, opt.antialias, opt)
             self.netD_B = define_D(opt.output_nc, opt.ndf, opt.netD, opt.n_layers_D, opt.normD, opt.init_type, opt.init_gain, opt.antialias, opt)
+            
         if self.opt.isTrain:
             if opt.lambda_identity > 0.0:  # only works when input and output images have the same number of channels
                 assert(opt.input_nc == opt.output_nc)
@@ -47,8 +49,10 @@ class DistanceGAN(BaseModel):
             # initialize optimizers; schedulers will be automatically created by function <BaseModel.setup>.
             self.optimizer_G = torch.optim.Adam(itertools.chain(self.netG_A.parameters(), self.netG_B.parameters()), lr=opt.lr, betas=(opt.beta1, 0.999))
             self.optimizer_D = torch.optim.Adam(itertools.chain(self.netD_A.parameters(), self.netD_B.parameters()), lr=opt.lr, betas=(opt.beta1, 0.999))
+            self.optimizer_S = torch.optim.Adam(self.netS.parameters(), lr=opt.lr, betas=(opt.beta1, 0.999))
             self.optimizers.append(self.optimizer_G)
             self.optimizers.append(self.optimizer_D)
+            self.optimizers.append(self.optimizer_S)
             
     def set_input(self, input):
         """Unpack input data from the dataloader and perform necessary pre-processing steps.
@@ -64,36 +68,16 @@ class DistanceGAN(BaseModel):
         self.real_A = self.real_A.to(self.device)
         self.mask_B = self.mask_B.to(self.device)
         self.real_B = self.real_B.to(self.device)
+        self.set_expectation_and_std(self.real_A, self.real_B)
         
-    def mask_realImage(self):
-        """mask out real image using the ground truth mask
-        """
-        mask_A_img = util.tensor2img(self.mask_A, isMask=True)
-        real_A_img = util.tensor2img(self.real_A)
-        mask_B_img = util.tensor2img(self.mask_B, isMask=True)
-        real_B_img = util.tensor2img(self.real_B)
-        masked_real_A_img = util.mask_image(mask_A_img, real_A_img)
-        masked_real_B_img = util.mask_image(mask_B_img, real_B_img)
-        self.masked_real_A = util.img2tensor(masked_real_A_img).to(self.device)
-        self.masked_real_B = util.img2tensor(masked_real_B_img).to(self.device)
-        self.set_expectation_and_std(self.masked_real_A, self.masked_real_B)
 
     def forward(self):
         """Run forward pass; called by both functions <optimize_parameters> and <test>."""
-        # mask out the input image using the ground truth mask and generate fake image use the masked real image only if it is training
-        if self.isTrain:
-            self.mask_realImage()
-            self.fake_B = self.netG_A(self.masked_real_A)
-            self.rec_A = self.netG_B(self.fake_B)
+        self.fake_B = self.netG_A(self.real_A)
+        self.rec_A = self.netG_B(self.fake_B)
 
-            self.fake_A = self.netG_B(self.masked_real_B)
-            self.rec_B = self.netG_A(self.fake_A)
-        else: 
-            self.fake_B = self.netG_A(self.real_A)
-            self.rec_A = self.netG_B(self.fake_B)
-
-            self.fake_A = self.netG_B(self.real_B)
-            self.rec_B = self.netG_A(self.fake_A)
+        self.fake_A = self.netG_B(self.real_B)
+        self.rec_B = self.netG_A(self.fake_A)
     
     def backward_D_basic(self, netD, real, fake):
         """Calculate GAN loss for the discriminator
@@ -173,6 +157,19 @@ class DistanceGAN(BaseModel):
             self.loss_distance_A + self.loss_distance_B
         self.loss_G.backward()
     
+    def backward_S(self):
+        """Calculate the loss for segmentor S"""
+        fake_mask_A = self.netS(self.real_A)
+        fake_mask_B = self.netS(self.real_B)
+        loss_S_real = (self.criterionSEG(fake_mask_A, self.mask_A).mean() + self.criterionSEG(fake_mask_B, self.mask_B).mean())*0.5
+
+        fake_A = self.fake_A.detach()
+        fake_B = self.fake_B.detach()
+        loss_S_fake = (self.criterionSEG(self.netS(fake_A), self.mask_A).mean() + self.criterionSEG(self.netS(fake_B), self.mask_B).mean())*0.5
+
+        self.loss_S = (loss_S_real + loss_S_fake)*0.5
+        self.loss_S.backward()
+    
     def data_dependent_initialize(self, data):
         return
     
@@ -187,6 +184,11 @@ class DistanceGAN(BaseModel):
         self.backward_D_A()      # calculate gradients for D_A
         self.backward_D_B()      # calculate graidents for D_B
         self.optimizer_D.step()  # update D_A and D_B's weight
+
+        # S
+        self.set_requires_grad(self.netS, True)
+        self.backward_S()
+        self.optimizer_S.step()
 
         # G_A and G_B
         self.set_requires_grad([self.netD_A, self.netD_B], False)  # Ds require no gradients when optimizing Gs

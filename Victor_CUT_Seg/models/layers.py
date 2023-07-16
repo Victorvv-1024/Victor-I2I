@@ -119,11 +119,14 @@ class Downsample(nn.Module):
     def forward(self, inp):
         if(self.k_size == 1):
             if(self.pad_off == 0):
-                return inp[:, :, ::self.stride, ::self.stride]
+                ret_val = inp[:, :, ::self.stride, ::self.stride]
             else:
-                return self.pad(inp)[:, :, ::self.stride, ::self.stride]
+                ret_val = self.pad(inp)[:, :, ::self.stride, ::self.stride]
         else:
-            return F.conv2d(self.pad(inp), self.filt, stride=self.stride, groups=inp.shape[1])
+            ret_val = F.conv2d(self.pad(inp), self.filt, stride=self.stride, groups=inp.shape[1])
+
+        # print(f'After downsample it has shape: {ret_val.shape}')
+        return ret_val
         
 class Upsample(nn.Module):
     def __init__(self, channels, pad_type='replicate', k_size=4, stride=2):
@@ -142,6 +145,7 @@ class Upsample(nn.Module):
 
     def forward(self, inp):
         ret_val = F.conv_transpose2d(self.pad(inp), self.filt, stride=self.stride, padding=1 + self.k_sizes, groups=inp.shape[1])[:, :, 1:, 1:]
+        # print(f'After upsample it has shape: {ret_val.shape}')
         if(self.filt_odd):
             return ret_val
         else:

@@ -46,12 +46,12 @@ class DCLModel(BaseModel):
             # define loss functions
             self.criterionGAN = GANLoss().to(self.device)
             self.criterionNCE = []
-            if opt.netS_Loss == 'bce' or opt.netS_Loss == 'BCE':
-                self.criterionSEG = SEGLoss(seg_lambda=opt.netS_lambda).to(self.device)
-            elif opt.netS_Loss == 'dice' or opt.netS_Loss == 'DICE':
-                self.criterionSEG = DiceLoss().to(self.device)
-            else: 
-                raise NotImplementedError('segmentation loss function is not implemented')
+            # if opt.netS_Loss == 'bce' or opt.netS_Loss == 'BCE':
+            #     self.criterionSEG = SEGLoss(seg_lambda=opt.netS_lambda).to(self.device)
+            # elif opt.netS_Loss == 'dice' or opt.netS_Loss == 'DICE':
+            #     self.criterionSEG = DiceLoss().to(self.device)
+            # else: 
+            #     raise NotImplementedError('segmentation loss function is not implemented')
 
             for nce_layer in self.nce_layers:
                 self.criterionNCE.append(PatchNCELoss(opt).to(self.device))
@@ -62,26 +62,11 @@ class DCLModel(BaseModel):
                                                 lr=opt.lr, betas=(opt.beta1, opt.beta2))
             self.optimizer_D = torch.optim.Adam(itertools.chain(self.netD_A.parameters(), self.netD_B.parameters()),
                                                 lr=opt.lr, betas=(opt.beta1, opt.beta2))
+            # self.optimizer_S = torch.optim.Adam(self.netS.parameters(), lr=opt.lr, betas=(opt.beta1, opt.beta2))
             self.optimizers.append(self.optimizer_G)
             self.optimizers.append(self.optimizer_D)
+            # self.optimizers.append(self.optimizer_S)
     
-    # def load_netS(self, path, epoch):
-    #     """Load all the networks from the disk.
-
-    #     Parameters:
-    #         epoch (int) -- current epoch; used in the file name '%s_net_%s.pth' % (epoch, name)
-    #     """
-    #     load_filename = '%s_net_%s.pth' % (epoch, 'S')
-    #     load_path = os.path.join(path, load_filename)
-    #     netS = getattr(self, 'netS')
-    #     if isinstance(netS, torch.nn.DataParallel):
-    #         netS = netS.module
-    #     state_dict = torch.load(load_path, map_location=str(self.device))
-    #     if hasattr(state_dict, '_metadata'):
-    #         del state_dict._metadata
-    #     netS.load_state_dict(state_dict)
-        
-    #     self.netS = netS
 
     def data_dependent_initialize(self, data):
         """
@@ -93,9 +78,11 @@ class DCLModel(BaseModel):
         self.set_input(data)
         self.forward() 
         if self.opt.isTrain:
-            self.compute_G_loss().backward()  # calculate graidents for G
+            
             self.backward_D_A()  # calculate gradients for D_A
             self.backward_D_B()  # calculate graidents for D_B
+            # self.backward_S()
+            self.compute_G_loss().backward()  # calculate graidents for G
             self.optimizer_F = torch.optim.Adam(itertools.chain(self.netF1.parameters(), self.netF2.parameters()))
             self.optimizers.append(self.optimizer_F)
 
@@ -109,6 +96,12 @@ class DCLModel(BaseModel):
         self.backward_D_A()  # calculate gradients for D_A
         self.backward_D_B()  # calculate graidents for D_B
         self.optimizer_D.step()
+
+        # update S
+        # self.set_requires_grad(self.netS, True)
+        # self.optimizer_S.zero_grad()
+        # self.backward_S()
+        # self.optimizer_S.step()
 
         # update G
         self.set_requires_grad([self.netD_A, self.netD_B], False)
@@ -129,45 +122,23 @@ class DCLModel(BaseModel):
         # A is the source and B is the target
         A, B = input
         self.mask_A, self.real_A = A
-        self.mask_B, self.real_B = B
+        # self.mask_B, self.real_B = B
         """attach to the device"""
-        self.mask_A = self.mask_A.to(self.device)
+        # self.mask_A = self.mask_A.to(self.device)
         self.real_A = self.real_A.to(self.device)
-        self.mask_B = self.mask_B.to(self.device)
-        self.real_B = self.real_B.to(self.device)
+        # self.mask_B = self.mask_B.to(self.device)
+        self.real_B = B.to(self.device)
         # cat them
         self.real = torch.cat((self.real_A, self.real_B), dim=0) if self.opt.nce_idt and self.opt.isTrain else self.real_A
-        self.mask = torch.cat((self.mask_A, self.mask_B), dim=0)
-    
-    def mask_realImage(self):
-        """mask out real image using the ground truth mask
-        """
-        mask_A_img = util.tensor2img(self.mask_A, isMask=True)
-        real_A_img = util.tensor2img(self.real_A)
-        mask_B_img = util.tensor2img(self.mask_B, isMask=True)
-        real_B_img = util.tensor2img(self.real_B)
-        masked_real_A_img = util.mask_image(mask_A_img, real_A_img)
-        masked_real_B_img = util.mask_image(mask_B_img, real_B_img)
-        self.masked_real_A = util.img2tensor(masked_real_A_img).to(self.device)
-        self.masked_real_B = util.img2tensor(masked_real_B_img).to(self.device)
-
-        self.masked_real = torch.cat((self.masked_real_A, self.masked_real_B), dim=0) if self.opt.nce_idt and self.opt.isTrain else self.masked_real_A
-          
+        # self.mask = torch.cat((self.mask_A, self.mask_B), dim=0)
+     
     def forward(self):
         """Run forward pass; called by both functions <optimize_parameters> and <test>."""
-        if self.isTrain:
-            self.mask_realImage()
-            self.fake_B = self.netG_A(self.masked_real_A)
-            self.fake_A = self.netG_B(self.masked_real_B)
-            if self.opt.nce_idt:
-                self.idt_A = self.netG_A(self.masked_real_B)
-                self.idt_B = self.netG_B(self.masked_real_A)
-        else: 
-            self.fake_B = self.netG_A(self.real_A)
-            self.fake_A = self.netG_B(self.real_B)
-            if self.opt.nce_idt:
-                self.idt_A = self.netG_A(self.real_B)
-                self.idt_B = self.netG_B(self.real_A)
+        self.fake_B = self.netG_A(self.real_A)
+        self.fake_A = self.netG_B(self.real_B)
+        if self.opt.nce_idt:
+            self.idt_A = self.netG_A(self.real_B)
+            self.idt_B = self.netG_B(self.real_A)
 
     def backward_D_basic(self, netD, real, fake):
         """Calculate GAN loss for the discriminator
@@ -229,17 +200,17 @@ class DCLModel(BaseModel):
         else:
             loss_NCE_both = (self.loss_NCE1 + self.loss_NCE2) * 0.5
         
-        if self.opt.netS_lambda > 0:
-            fake_B_mask = self.netS(fakeB)
-            loss_fake_SEG_B = self.criterionSEG(fake_B_mask, self.mask_B).mean()
+        # if self.opt.netS_lambda > 0:
+        #     fake_B_mask = self.netS(fakeB)
+        #     loss_fake_SEG_B = self.criterionSEG(fake_B_mask, self.mask_B).mean()
             
-            fake_A_mask = self.netS(fakeA)
-            loss_fake_SEG_A = self.criterionSEG(fake_A_mask, self.mask_A).mean()
-            loss_SEG_both = (loss_fake_SEG_A + loss_fake_SEG_B) * 0.5
-        else:
-            loss_SEG_both = 0
+        #     fake_A_mask = self.netS(fakeA)
+        #     loss_fake_SEG_A = self.criterionSEG(fake_A_mask, self.mask_A).mean()
+        #     loss_SEG_both = (loss_fake_SEG_A + loss_fake_SEG_B) * 0.5
+        # else:
+        #     loss_SEG_both = 0
 
-        self.loss_G = (self.loss_G_A + self.loss_G_B) * 0.5 + loss_NCE_both + loss_SEG_both
+        self.loss_G = (self.loss_G_A + self.loss_G_B) * 0.5 + loss_NCE_both
         return self.loss_G
 
     def calculate_NCE_loss1(self, src, tgt):
@@ -265,3 +236,16 @@ class DCLModel(BaseModel):
             loss = crit(f_q, f_k)
             total_nce_loss += loss.mean()
         return total_nce_loss / n_layers
+
+    # def backward_S(self):
+    #     """Calculate the loss for segmentor S"""
+    #     fake_mask_A = self.netS(self.real_A)
+    #     fake_mask_B = self.netS(self.real_B)
+    #     loss_S_real = (self.criterionSEG(fake_mask_A, self.mask_A).mean() + self.criterionSEG(fake_mask_B, self.mask_B).mean())*0.5
+
+    #     fake_A = self.fake_A.detach()
+    #     fake_B = self.fake_B.detach()
+    #     loss_S_fake = (self.criterionSEG(self.netS(fake_A), self.mask_A).mean() + self.criterionSEG(self.netS(fake_B), self.mask_B).mean())*0.5
+
+    #     self.loss_S = (loss_S_real + loss_S_fake)*0.5
+    #     self.loss_S.backward()
