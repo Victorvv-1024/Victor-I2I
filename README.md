@@ -9,6 +9,7 @@ Follow the instructions in [pytorch.org](https://pytorch.org/) for your current 
 ## Training $ Testing
 ### 1. Setup the dataset
 First, you need to build the dataset by setting up the following directory structure:
+```
 .
 ├── datasets                   
 |   ├── <dataset_name>         # e.g. TLA4, SWET
@@ -18,3 +19,6 @@ First, you need to build the dataset by setting up the following directory struc
 |   |   └── non-white          # contains domain B images (i.e. non-white)
 |   |   |   ├── train          # Training
 |   |   |   └── test           # Testing
+```
+
+### 2. Training
