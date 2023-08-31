@@ -34,7 +34,10 @@ if __name__ == '__main__':
     # create model
     model = create_model(opt)
     # load netG
-    netG = getattr(model, 'netG')
+    if opt.model == 'cyclegan' or opt.model == 'dcl' or opt.model == 'distance' or opt.model == 'ag_cycle':
+        netG = getattr(model, 'netG_A')
+    else:
+        netG = getattr(model, 'netG')
     if isinstance(netG, torch.nn.DataParallel):
         netG = netG.module
     load_path = opt.load_path
@@ -44,4 +47,4 @@ if __name__ == '__main__':
     netG.load_state_dict(state_dict)
     
     # create image
-    image_generation.ag_generate_image(test_src_dataloader, netG, opt=opt, device=device, translated_only=True)
+    image_generation.generate_image(test_src_dataloader, netG, opt=opt, device=device, translated_only=False)
