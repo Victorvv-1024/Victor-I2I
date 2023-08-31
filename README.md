@@ -20,7 +20,7 @@ First, you need to build the dataset by setting up the following directory struc
 |   |   |   ├── train          # Training
 |   |   |   └── test           # Testing
 ```
-
+An example of the dataset is shown in [this folder](https://github.com/Victorvv-1024/Victor-I2I/tree/master/I2I/datasets/TLA)
 ### 2. Training
 ```
 python train.py --model ag_cut --normG batch --normD batch --init_type normal --name <save_name>
